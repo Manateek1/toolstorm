@@ -28,11 +28,12 @@ import { runScriptedScenario } from "./domain/scriptedRun";
 import type { FaultKind, OutcomeCheck, RunMode, RunRecord, TraceEvent, TicketState } from "./domain/types";
 import { clearRunHistory, exportRun, readRunHistory, saveRunHistory } from "./lib/history";
 
-const PUBLIC_PREVIEW = import.meta.env.PROD;
+const PUBLIC_SCRIPTED_PREVIEW = import.meta.env.VITE_PUBLIC_SCRIPTED_PREVIEW === "true";
 const INITIAL_FAULT: FaultKind = "temporary_error";
 
 interface LocalStatus {
-  local: boolean;
+  available: boolean;
+  source: "local" | "vercel" | "unknown";
   hasHanzoKey: boolean;
   defaultModel: string;
 }
@@ -192,7 +193,7 @@ function App() {
   const [tokenLimit, setTokenLimit] = useState(2048);
   const [status, setStatus] = useState<LocalStatus | null>(null);
   const [history, setHistory] = useState<RunRecord[]>(readRunHistory);
-  const [currentRun, setCurrentRun] = useState<RunRecord | null>(() => PUBLIC_PREVIEW ? runScriptedScenario(INITIAL_FAULT) : null);
+  const [currentRun, setCurrentRun] = useState<RunRecord | null>(() => PUBLIC_SCRIPTED_PREVIEW ? runScriptedScenario(INITIAL_FAULT) : null);
   const [liveTrace, setLiveTrace] = useState<TraceEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -218,11 +219,11 @@ function App() {
   }, [confirmOpen]);
 
   useEffect(() => {
-    if (PUBLIC_PREVIEW) return;
+    if (PUBLIC_SCRIPTED_PREVIEW) return;
     let cancelled = false;
     fetch("/api/status", { headers: { Accept: "application/json" } })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Local API is not available.");
+        if (!response.ok) throw new Error("Toolstorm runner is not available.");
         return (await response.json()) as LocalStatus;
       })
       .then((value) => {
@@ -231,7 +232,7 @@ function App() {
         setModel(value.defaultModel || "enso-auto");
       })
       .catch(() => {
-        if (!cancelled) setStatus({ local: false, hasHanzoKey: false, defaultModel: "enso-auto" });
+        if (!cancelled) setStatus({ available: false, source: "unknown", hasHanzoKey: false, defaultModel: "enso-auto" });
       });
     return () => { cancelled = true; };
   }, []);
@@ -248,7 +249,7 @@ function App() {
 
     try {
       let run: RunRecord;
-      if (PUBLIC_PREVIEW) {
+      if (PUBLIC_SCRIPTED_PREVIEW) {
         run = runScriptedScenario(nextFault);
         for (const event of run.trace) {
           await new Promise((resolve) => window.setTimeout(resolve, 110));
@@ -268,9 +269,9 @@ function App() {
         });
         if (!response.ok) {
           const data = await response.json() as { error?: string };
-          throw new Error(data.error || "The local run could not be started.");
+          throw new Error(data.error || "The run could not be started.");
         }
-        if (!response.body) throw new Error("The local run returned no trace stream.");
+        if (!response.body) throw new Error("The run returned no trace stream.");
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -282,7 +283,7 @@ function App() {
           const message = JSON.parse(line) as { type: string; event?: TraceEvent; run?: RunRecord; error?: string };
           if (message.type === "event" && message.event) setLiveTrace((previous) => [...previous, message.event!]);
           if (message.type === "complete" && message.run) completed = message.run;
-          if (message.type === "error") streamError = message.error || "The local run failed.";
+          if (message.type === "error") streamError = message.error || "The run failed.";
         };
 
         while (true) {
@@ -295,18 +296,20 @@ function App() {
         }
         if (pending.trim()) consumeLine(pending);
         if (streamError) throw new Error(streamError);
-        if (!completed) throw new Error("The local run ended before its result was saved.");
+        if (!completed) throw new Error("The run ended before its result was saved.");
         run = completed;
       }
 
       setCurrentRun(run);
       setLiveTrace([]);
       setHistory((previous) => [run, ...previous.filter((entry) => entry.id !== run.id)].slice(0, 16));
-      setNotice(nextMode === "hanzo" && !PUBLIC_PREVIEW
+      setNotice(nextMode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW
         ? `${run.model} finished. ${run.trace.filter((event) => event.kind === "agent" && event.title.startsWith("Model turn")).length} model turns used.`
-        : PUBLIC_PREVIEW
-          ? "Hosted scripted demo complete. No MCP server or LLM was used by this page."
-          : "Scripted run complete. The local MCP server handled every tool call; no LLM was used.");
+        : PUBLIC_SCRIPTED_PREVIEW
+          ? "Scripted walkthrough complete. No server or LLM was used by this page."
+          : status?.source === "vercel"
+            ? "Vercel MCP simulation complete. No LLM was used."
+            : "Scripted run complete. The local MCP server handled every tool call; no LLM was used.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The run could not be completed.");
     } finally {
@@ -315,7 +318,7 @@ function App() {
   }
 
   function requestRun() {
-    if (PUBLIC_PREVIEW || mode === "scripted") {
+    if (PUBLIC_SCRIPTED_PREVIEW || mode === "scripted") {
       void startRun(fault, mode, false);
       return;
     }
@@ -325,7 +328,7 @@ function App() {
   function replayCurrent() {
     if (!currentRun) return;
     setFault(currentRun.fault);
-    if (mode === "hanzo" && !PUBLIC_PREVIEW) {
+    if (mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW) {
       setConfirmOpen(true);
     } else {
       void startRun(currentRun.fault, mode, false);
@@ -359,11 +362,13 @@ function App() {
     setNotice(`${run.mode === "hanzo" ? run.model : "Scripted simulation"} · ${timeLabel(run.createdAt)}`);
   }
 
-  const demoCaption = PUBLIC_PREVIEW
-    ? "Hosted scripted demo · MCP server runs locally"
+  const demoCaption = PUBLIC_SCRIPTED_PREVIEW
+    ? "Hosted walkthrough · scripted trace only"
+    : status?.source === "vercel"
+      ? "Vercel MCP simulation · no model calls"
     : mode === "hanzo"
-      ? "Hanzo calls require confirmation · key remains on this machine"
-      : "Scripted MCP run · no LLM call";
+      ? "Hanzo calls require confirmation · key stays server-side"
+      : "Local scripted MCP run · no LLM call";
 
   return (
     <div className="app-shell">
@@ -374,9 +379,9 @@ function App() {
           <span>Toolstorm</span>
         </a>
         <div className="privacy-indicator" aria-live="polite">
-          {PUBLIC_PREVIEW ? <Laptop aria-hidden="true" /> : mode === "hanzo" ? <LockKeyhole aria-hidden="true" /> : <Laptop aria-hidden="true" />}
+          {mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? <LockKeyhole aria-hidden="true" /> : <Laptop aria-hidden="true" />}
           <span>{demoCaption}</span>
-          <span className={`privacy-dot ${mode === "hanzo" && !PUBLIC_PREVIEW ? "privacy-dot--amber" : ""}`} />
+          <span className={`privacy-dot ${mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? "privacy-dot--amber" : ""}`} />
         </div>
       </header>
 
@@ -393,7 +398,7 @@ function App() {
                 {currentRun.result === "passed" ? "Run passed" : outcomeText(currentRun.result)}
               </span>
             ) : <span className="quiet-label">Ready to run</span>}
-            <button className="button button--primary" onClick={requestRun} type="button" disabled={busy || (mode === "hanzo" && !status?.hasHanzoKey && !PUBLIC_PREVIEW)}>
+            <button className="button button--primary" onClick={requestRun} type="button" disabled={busy || (mode === "hanzo" && !status?.hasHanzoKey && !PUBLIC_SCRIPTED_PREVIEW)}>
               {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
               <span>{busy ? "Running…" : "Run scenario"}</span>
             </button>
@@ -422,8 +427,8 @@ function App() {
         <div className="announcements" aria-live="polite">
           {error && <div className="banner banner--error"><CircleX aria-hidden="true" /><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X aria-hidden="true" /></button></div>}
           {!error && notice && <div className="banner banner--notice"><CheckCircle2 aria-hidden="true" /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message"><X aria-hidden="true" /></button></div>}
-          {!PUBLIC_PREVIEW && status && !status.local && (
-            <div className="banner banner--error"><CircleX aria-hidden="true" /><span>Local API is unavailable. Start both services with <code>npm run dev</code>.</span></div>
+          {!PUBLIC_SCRIPTED_PREVIEW && status && !status.available && (
+            <div className="banner banner--error"><CircleX aria-hidden="true" /><span>{status.source === "vercel" ? "The hosted runner is unavailable. Please retry shortly." : status.source === "local" ? <>Local API is unavailable. Start both services with <code>npm run dev</code>.</> : "Toolstorm runner did not respond. Refresh the page or start the local app with npm run dev."}</span></div>
           )}
         </div>
 
@@ -455,7 +460,7 @@ function App() {
 
             <section className="control-section model-section" aria-labelledby="model-heading">
               <h3 id="model-heading"><Bot aria-hidden="true" /> Model mode</h3>
-              {!PUBLIC_PREVIEW ? (
+              {!PUBLIC_SCRIPTED_PREVIEW ? (
                 <label className="field field--mode">
                   <span className="sr-only">Model mode</span>
                   <span className="select-wrap">
@@ -468,9 +473,9 @@ function App() {
                   </span>
                 </label>
               ) : (
-                <div className="mode-static"><CirclePlay aria-hidden="true" /> Hosted scripted demo</div>
+                <div className="mode-static"><CirclePlay aria-hidden="true" /> Hosted scripted walkthrough</div>
               )}
-              {mode === "hanzo" && !PUBLIC_PREVIEW ? (
+              {mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? (
                 <div className="model-options">
                   <label className="field field--model">
                     <span className="field-label">Hanzo model ID</span>
@@ -485,10 +490,14 @@ function App() {
                 </div>
               ) : (
                 <p className="mode-description">
-                  {PUBLIC_PREVIEW ? "This hosted page plays a scripted trace. Run npm run dev to launch the local MCP app." : "Calls the local MCP tools without using model credits."}
+                  {PUBLIC_SCRIPTED_PREVIEW
+                    ? "This public page plays a scripted trace. Run npm run dev to use the MCP app."
+                    : status?.source === "vercel"
+                      ? "This Vercel app runs the synthetic tools through an in-memory MCP server. Hanzo inference stays disabled on this public deployment."
+                      : "Calls the local MCP tools without using model credits."}
                 </p>
               )}
-              {!PUBLIC_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">Set HANZO_API_KEY locally to enable confirmed Hanzo runs.</p>}
+              {!PUBLIC_SCRIPTED_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">{status?.source === "vercel" ? "Hanzo mode is disabled on this public deployment. Run locally to use a private key." : "Set HANZO_API_KEY locally to enable confirmed Hanzo runs."}</p>}
             </section>
 
             <section className="control-section saved-section" aria-labelledby="saved-heading">
@@ -526,10 +535,10 @@ function App() {
                 <p>{busy ? `${liveTrace.length} live chronological events` : currentRun ? `${currentRun.trace.length} chronological events` : "Run the scenario to see each step."}</p>
                 </div>
               </div>
-            {(currentRun || busy) && <span className={`trace-mode ${(busy ? mode : currentRun?.mode) === "hanzo" ? "trace-mode--live" : ""}`}>{(busy ? mode : currentRun?.mode) === "hanzo" ? "HANZO RUN" : PUBLIC_PREVIEW ? "HOSTED DEMO" : "SCRIPTED MCP"}</span>}
+            {(currentRun || busy) && <span className={`trace-mode ${(busy ? mode : currentRun?.mode) === "hanzo" ? "trace-mode--live" : ""}`}>{(busy ? mode : currentRun?.mode) === "hanzo" ? "HANZO RUN" : PUBLIC_SCRIPTED_PREVIEW ? "SCRIPTED WALKTHROUGH" : "SCRIPTED MCP"}</span>}
             </div>
-            {!PUBLIC_PREVIEW && !status?.local && (
-              <div className="trace-empty"><Activity aria-hidden="true" /><strong>Local runner not connected</strong><span>Start the local app to connect to its MCP server.</span></div>
+            {!PUBLIC_SCRIPTED_PREVIEW && status && !status.available && (
+              <div className="trace-empty"><Activity aria-hidden="true" /><strong>{status.source === "vercel" ? "Hosted runner unavailable" : status.source === "local" ? "Local runner not connected" : "Runner did not respond"}</strong><span>{status.source === "vercel" ? "The serverless MCP simulation could not be reached." : status.source === "local" ? "Start the local app to connect to its MCP server." : "Refresh the page or start the local app with npm run dev."}</span></div>
             )}
             {busy ? (
               liveTrace.length ? (
@@ -587,8 +596,8 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <span><LockKeyhole aria-hidden="true" /> Demo data stays local; saved run history stays in this browser.</span>
-        {!PUBLIC_PREVIEW && mode === "hanzo" && <span>Confirmed Hanzo runs send the task prompt and simulated tool results to Hanzo.</span>}
+        <span><LockKeyhole aria-hidden="true" /> {PUBLIC_SCRIPTED_PREVIEW ? "Scripted demo data and saved run history stay in this browser." : status?.source === "vercel" ? "Synthetic data stays in the Vercel simulation; run history stays in this browser." : "Demo data stays on this machine; saved run history stays in this browser."}</span>
+        {!PUBLIC_SCRIPTED_PREVIEW && mode === "hanzo" && <span>Confirmed Hanzo runs send the task prompt and simulated tool results to Hanzo.</span>}
         <span>Experimental demo · not a security certification</span>
       </footer>
 

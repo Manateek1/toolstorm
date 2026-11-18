@@ -13,7 +13,7 @@ export const ALLOWED_TOOLS = [
 
 export async function connectTicketMcp(fault: FaultKind) {
   const client = new Client({ name: "toolstorm-agent-host", version: "1.0.0" });
-  const serverPath = fileURLToPath(new URL("./ticket-server.ts", import.meta.url));
+  const serverPath = fileURLToPath(new URL("./stdio.ts", import.meta.url));
   const tsxCliPath = path.resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
   const env: Record<string, string> = {};
   for (const key of ["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE"]) {

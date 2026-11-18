@@ -26,7 +26,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.get("/api/status", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({
-    local: true,
+    available: true,
+    source: "local",
     hasHanzoKey: Boolean(process.env.HANZO_API_KEY?.trim()),
     defaultModel: process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
   });

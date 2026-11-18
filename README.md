@@ -6,9 +6,9 @@ Toolstorm is an experimental, local-first demo for seeing how an AI agent handle
 
 **This is an experimental demo, not a security certification.** Its checks are narrow and deterministic; they do not establish that an agent or system is secure in general.
 
-## Hosted demo and full local app
+## Hosted demos and full local app
 
-**[Open the hosted scripted demo](https://manateek1.github.io/toolstorm/)**. That URL is a static walkthrough: GitHub Pages cannot run the Node server, so it does not connect to the MCP server. The **full functioning MCP app** runs locally with `npm run dev` as described below. The hosted demo makes no model calls.
+**[Open the GitHub Pages walkthrough](https://manateek1.github.io/toolstorm/)**. It is a static scripted trace because GitHub Pages cannot run the Node server. The Vercel deployment runs the synthetic MCP server for each run, and the **full Hanzo-capable app** runs locally with `npm run dev` as described below.
 
 ## Run locally
 
@@ -31,6 +31,12 @@ The fault selector offers:
 - **Malformed tool data** — one article result is incomplete, so the agent must recover.
 - **Untrusted instruction** — the article result contains adversarial text that must be treated as data.
 
+### Vercel-hosted MCP simulation
+
+The Vercel app serves the same dashboard and `/api` endpoints. Each run creates a fresh synthetic ticket server and MCP client from the official TypeScript SDK, connects them with the SDK's in-memory transport, and streams the real tool calls and results into the trace. Ticket data and injected faults stay inside this fictional simulation. The Vercel deployment has Hanzo inference disabled, does not need `HANZO_API_KEY`, and makes no model calls or credit usage.
+
+To deploy, import this repository into Vercel as a Vite project with the default `npm run build` command and `dist` output directory. No environment variables, database, custom domain, or paid API is required. The GitHub Pages workflow sets its own scripted-preview flag; that flag is not used by Vercel. Vercel Hobby hosting has plan limits; see [Vercel pricing](https://vercel.com/pricing).
+
 ### Hanzo mode
 
 1. Copy `.env.example` to `.env.local`.
@@ -52,11 +58,11 @@ Each real run stops at 5 model turns, 8 tool calls, or the selected total output
 
 The checker evaluates the simulation state and trace. It does not ask an LLM to judge the run. Run history and settings are not sent to a server. A confirmed Hanzo run is the sole exception for the task prompt and simulated tool results described above.
 
-## Free public hosting
+## Public hosting
 
-The public source repository deploys the static preview to [GitHub Pages](https://manateek1.github.io/toolstorm/) from `main` with [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow builds to `dist`; no server functions, secrets, or custom domain are needed. The bundle runs only the scripted preview in the visitor's browser and contains no Hanzo key or model endpoint. Keep Hanzo mode on your local copy.
+The source repository publishes the scripted walkthrough to [GitHub Pages](https://manateek1.github.io/toolstorm/) from `main` with [`.github/workflows/pages.yml`](.github/workflows/pages.yml). That bundle runs the scripted trace in the visitor's browser and contains no Hanzo key or model endpoint. The Vercel app runs the serverless MCP simulation but keeps Hanzo mode disabled. Keep real Hanzo runs on your local copy.
 
-GitHub Pages is available for public repositories on GitHub Free, and standard GitHub-hosted Actions runners are free for public repositories. GitHub may log visitor IP addresses for security, but Toolstorm sends no scenario data from the public preview.
+GitHub may log visitor IP addresses for security. Toolstorm sends no scenario data from the static Pages walkthrough. On Vercel, requests go to the app's own API functions; run history remains in browser storage and is not persisted by the server.
 
 ## Tool surface and data
 
