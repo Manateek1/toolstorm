@@ -1,4 +1,4 @@
-import { HELP_ARTICLE, UNTRUSTED_TEXT } from "./fixture";
+import { HELP_ARTICLE, UNTRUSTED_TEXT } from "./fixture.ts";
 import type { FaultKind, OutcomeCheck, TicketState, TraceEvent } from "./types";
 
 const useContext = /export|report|file|upload|timeout/i;
