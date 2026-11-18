@@ -239,6 +239,7 @@ function App() {
         if (cancelled) return;
         setStatus(value);
         setModel(value.defaultModel || "enso-auto");
+        if (value.hasHanzoKey) setMode("hanzo");
       })
       .catch(() => {
         if (!cancelled) setStatus({ available: false, source: "unknown", hasHanzoKey: false, defaultModel: "enso-auto" });
@@ -374,7 +375,11 @@ function App() {
   const demoCaption = PUBLIC_SCRIPTED_PREVIEW
     ? "Hosted walkthrough · scripted trace only"
     : status?.source === "vercel"
-      ? "Vercel MCP simulation · no model calls"
+      ? mode === "hanzo"
+        ? "Hanzo calls require confirmation · key stays server-side"
+        : status.hasHanzoKey
+          ? "Vercel MCP ready · Hanzo calls stay off until confirmed"
+          : "Vercel MCP simulation · no model calls"
     : mode === "hanzo"
       ? "Hanzo calls require confirmation · key stays server-side"
       : "Local scripted MCP run · no LLM call";
@@ -502,11 +507,13 @@ function App() {
                   {PUBLIC_SCRIPTED_PREVIEW
                     ? "This public page plays a scripted trace. Run npm run dev to use the MCP app."
                     : status?.source === "vercel"
-                      ? "This Vercel app runs the synthetic tools through an in-memory MCP server. Hanzo inference stays disabled on this public deployment."
+                      ? status.hasHanzoKey
+                        ? "The Hanzo model calls the configured API from this server and uses the same local MCP tools. No request is sent until you confirm."
+                        : "This Vercel app runs the synthetic tools through an in-memory MCP server. Add HANZO_API_KEY in Vercel to enable confirmed Hanzo runs."
                       : "Calls the local MCP tools without using model credits."}
                 </p>
               )}
-              {!PUBLIC_SCRIPTED_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">{status?.source === "vercel" ? "Hanzo mode is disabled on this public deployment. Run locally to use a private key." : "Set HANZO_API_KEY locally to enable confirmed Hanzo runs."}</p>}
+              {!PUBLIC_SCRIPTED_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">{status?.source === "vercel" ? "Set HANZO_API_KEY in the Vercel project environment to enable Hanzo mode." : "Set HANZO_API_KEY locally to enable confirmed Hanzo runs."}</p>}
             </section>
 
             <section className="control-section saved-section" aria-labelledby="saved-heading">
@@ -619,7 +626,8 @@ function App() {
             <p id="confirm-description">Toolstorm will send the task prompt and simulated ticket/help-article tool results to Hanzo. This may use credits on your Hanzo account.</p>
             <div className="confirmation-facts">
               <span><CheckCircle2 aria-hidden="true" /> Only the fixed fictional ticket scenario is sent</span>
-              <span><CheckCircle2 aria-hidden="true" /> Your API key stays in the local server environment</span>
+              <span><CheckCircle2 aria-hidden="true" /> Model: {model} · up to {tokenLimit.toLocaleString()} output tokens, 5 model turns, and 8 tool calls</span>
+              <span><CheckCircle2 aria-hidden="true" /> Your API key stays in the server environment</span>
               <span><CheckCircle2 aria-hidden="true" /> No request is made until you confirm below</span>
             </div>
             <div className="modal-actions">

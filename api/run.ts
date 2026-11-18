@@ -89,7 +89,12 @@ export default {
 
     const mode: RunMode = payload.mode === "hanzo" ? "hanzo" : "scripted";
     if (mode === "hanzo") {
-      return jsonError("Hanzo inference is disabled on this public Vercel deployment. Run Toolstorm locally to use your own key.", 403);
+      if (!process.env.HANZO_API_KEY) {
+        return jsonError("Hanzo mode is unavailable because HANZO_API_KEY is not configured on this deployment.", 503);
+      }
+      if (payload.confirmed !== true) {
+        return jsonError("Confirm the Hanzo run before starting it.", 403);
+      }
     }
 
     const configuredTokens = typeof payload.maxOutputTokens === "number" && Number.isFinite(payload.maxOutputTokens)
@@ -100,7 +105,7 @@ export default {
       fault: parseFault(payload.fault),
       model: typeof payload.model === "string" ? payload.model.trim().slice(0, 120) : "enso-auto",
       maxOutputTokens: Math.max(256, Math.min(8192, configuredTokens)),
-      confirmed: false,
+      confirmed: mode === "hanzo" && payload.confirmed === true,
     };
 
     return new Response(ndjsonStream(runRequest), { headers: streamHeaders });

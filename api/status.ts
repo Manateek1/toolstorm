@@ -6,10 +6,8 @@ export default {
       {
         available: true,
         source: "vercel",
-        // The public deployment is deliberately scripted-only. Keep credit-bearing
-        // Hanzo inference on the owner's local server.
-        hasHanzoKey: false,
-        defaultModel: "enso-auto",
+        hasHanzoKey: Boolean(process.env.HANZO_API_KEY),
+        defaultModel: process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
       },
       { headers: { "Cache-Control": "no-store" } },
     );
