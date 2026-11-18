@@ -12,7 +12,6 @@ import {
   CirclePlay,
   CircleX,
   Clock3,
-  CloudLightning,
   FileText,
   Laptop,
   LockKeyhole,
@@ -45,6 +44,17 @@ function stringify(value: unknown) {
   } catch {
     return String(value);
   }
+}
+
+function ToolstormMark() {
+  return (
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
+      <path d="M23.8 8.2a11.2 11.2 0 1 0 3.4 7.8" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M20.4 11.6a6.3 6.3 0 1 0 1.9 4.4" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" opacity=".78" />
+      <path d="M22.3 16h4.8" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+      <circle cx="27.1" cy="16" r="1.5" fill="currentColor" />
+    </svg>
+  );
 }
 
 function FaultIcon({ state }: { state: OutcomeCheck["state"] }) {
@@ -295,7 +305,7 @@ function App() {
       setNotice(nextMode === "hanzo" && !PUBLIC_PREVIEW
         ? `${run.model} finished. ${run.trace.filter((event) => event.kind === "agent" && event.title.startsWith("Model turn")).length} model turns used.`
         : PUBLIC_PREVIEW
-          ? "Scripted preview complete. No MCP server or LLM was used by this hosted page."
+          ? "Hosted scripted demo complete. No MCP server or LLM was used by this page."
           : "Scripted run complete. The local MCP server handled every tool call; no LLM was used.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The run could not be completed.");
@@ -350,7 +360,7 @@ function App() {
   }
 
   const demoCaption = PUBLIC_PREVIEW
-    ? "Public scripted preview · no MCP server or LLM calls"
+    ? "Hosted scripted demo · MCP server runs locally"
     : mode === "hanzo"
       ? "Hanzo calls require confirmation · key remains on this machine"
       : "Scripted MCP run · no LLM call";
@@ -360,7 +370,7 @@ function App() {
       <a className="skip-link" href="#workspace">Skip to scenario controls</a>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Toolstorm home">
-          <span className="brand-mark"><CloudLightning aria-hidden="true" /></span>
+          <span className="brand-mark"><ToolstormMark /></span>
           <span>Toolstorm</span>
         </a>
         <div className="privacy-indicator" aria-live="polite">
@@ -458,7 +468,7 @@ function App() {
                   </span>
                 </label>
               ) : (
-                <div className="mode-static"><CirclePlay aria-hidden="true" /> Scripted preview</div>
+                <div className="mode-static"><CirclePlay aria-hidden="true" /> Hosted scripted demo</div>
               )}
               {mode === "hanzo" && !PUBLIC_PREVIEW ? (
                 <div className="model-options">
@@ -475,7 +485,7 @@ function App() {
                 </div>
               ) : (
                 <p className="mode-description">
-                  {PUBLIC_PREVIEW ? "This public preview uses a scripted trace; it makes no MCP or LLM calls." : "Calls the local MCP tools without using model credits."}
+                  {PUBLIC_PREVIEW ? "This hosted page plays a scripted trace. Run npm run dev to launch the local MCP app." : "Calls the local MCP tools without using model credits."}
                 </p>
               )}
               {!PUBLIC_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">Set HANZO_API_KEY locally to enable confirmed Hanzo runs.</p>}
@@ -516,7 +526,7 @@ function App() {
                 <p>{busy ? `${liveTrace.length} live chronological events` : currentRun ? `${currentRun.trace.length} chronological events` : "Run the scenario to see each step."}</p>
                 </div>
               </div>
-            {(currentRun || busy) && <span className={`trace-mode ${(busy ? mode : currentRun?.mode) === "hanzo" ? "trace-mode--live" : ""}`}>{(busy ? mode : currentRun?.mode) === "hanzo" ? "HANZO RUN" : PUBLIC_PREVIEW ? "SCRIPTED PREVIEW" : "SCRIPTED MCP"}</span>}
+            {(currentRun || busy) && <span className={`trace-mode ${(busy ? mode : currentRun?.mode) === "hanzo" ? "trace-mode--live" : ""}`}>{(busy ? mode : currentRun?.mode) === "hanzo" ? "HANZO RUN" : PUBLIC_PREVIEW ? "HOSTED DEMO" : "SCRIPTED MCP"}</span>}
             </div>
             {!PUBLIC_PREVIEW && !status?.local && (
               <div className="trace-empty"><Activity aria-hidden="true" /><strong>Local runner not connected</strong><span>Start the local app to connect to its MCP server.</span></div>
