@@ -381,7 +381,7 @@ function App() {
               <label className="field field--mode">
                 <span className="field-label">Mode</span>
                 <span className="select-wrap">
-                  <select value={mode} onChange={(event) => handleModeChange(event.target.value)} aria-label="Model mode">
+                  <select value={mode} onChange={(event) => handleModeChange(event.target.value)} aria-label="Model mode" disabled={busy}>
                     <option value="scripted">Scripted MCP demo</option>
                     {status?.hasHanzoKey && <option value="hanzo">Hanzo model</option>}
                     {!status?.hasHanzoKey && <option value="hanzo" disabled>Hanzo model · key required</option>}
@@ -400,11 +400,11 @@ function App() {
               <>
                 <label className="field field--model">
                   <span className="field-label">Hanzo model ID</span>
-                  <input value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} placeholder="enso-auto" />
+                  <input value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} placeholder="enso-auto" disabled={busy} />
                 </label>
                 <label className="field field--tokens">
                   <span className="field-label">Output cap</span>
-                  <select value={tokenLimit} onChange={(event) => setTokenLimit(Number(event.target.value))} aria-label="Maximum output tokens per run">
+                  <select value={tokenLimit} onChange={(event) => setTokenLimit(Number(event.target.value))} aria-label="Maximum output tokens per run" disabled={busy}>
                     {[512, 1024, 2048, 4096, 8192].map((value) => <option key={value} value={value}>{value.toLocaleString()} tokens</option>)}
                   </select>
                 </label>
@@ -418,10 +418,10 @@ function App() {
           </div>
           <div className="toolbar-actions">
             {!PUBLIC_PREVIEW && mode === "hanzo" && !status?.hasHanzoKey && <span className="key-missing">Add HANZO_API_KEY locally</span>}
-            <button className="button button--quiet" onClick={handleReset} type="button" title="Restore the ticket display to the original fixture">
+            <button className="button button--quiet" onClick={handleReset} type="button" title="Restore the ticket display to the original fixture" disabled={busy}>
               <RotateCcw aria-hidden="true" /><span>Reset</span>
             </button>
-            <button className="button button--quiet" onClick={handleClearHistory} type="button" disabled={history.length === 0}>
+            <button className="button button--quiet" onClick={handleClearHistory} type="button" disabled={busy || history.length === 0}>
               <Trash2 aria-hidden="true" /><span>Clear history</span>
             </button>
             <button className="button button--quiet" onClick={() => currentRun && exportRun(currentRun)} type="button" disabled={!currentRun}>
@@ -473,7 +473,7 @@ function App() {
               <div className="fault-options">
                 {FAULTS.map((item) => (
                   <label className={`fault-option ${fault === item.id ? "fault-option--selected" : ""}`} key={item.id}>
-                    <input type="radio" name="fault" value={item.id} checked={fault === item.id} onChange={() => setFault(item.id)} />
+                    <input type="radio" name="fault" value={item.id} checked={fault === item.id} onChange={() => setFault(item.id)} disabled={busy} />
                     <span className="radio-indicator" aria-hidden="true"><span /></span>
                     <span className="fault-copy"><strong>{item.title}</strong><small>{item.description}</small></span>
                   </label>
@@ -490,7 +490,7 @@ function App() {
                 <ul className="saved-list">
                   {visibleHistory.map((run) => (
                     <li key={run.id}>
-                      <button type="button" className={`saved-run ${currentRun?.id === run.id ? "saved-run--selected" : ""}`} onClick={() => selectHistory(run)}>
+                      <button type="button" className={`saved-run ${currentRun?.id === run.id ? "saved-run--selected" : ""}`} onClick={() => selectHistory(run)} disabled={busy}>
                         <span className={`saved-state saved-state--${run.result}`} aria-hidden="true" />
                         <span className="saved-run-copy">
                           <strong>{faultTitle(run.fault)}</strong>

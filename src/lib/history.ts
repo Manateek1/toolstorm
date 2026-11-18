@@ -38,5 +38,5 @@ export function exportRun(run: RunRecord) {
   anchor.href = href;
   anchor.download = `toolstorm-ticket-104-${run.id.slice(0, 8)}.json`;
   anchor.click();
-  URL.revokeObjectURL(href);
+  window.setTimeout(() => URL.revokeObjectURL(href), 1_000);
 }

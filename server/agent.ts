@@ -212,6 +212,7 @@ async function runScripted(fault: FaultKind): Promise<RunRecord> {
   const trace: TraceEvent[] = [];
   const connection = await connectTicketMcp(fault);
   const counts = { toolCalls: 0, degradedTools: new Set<string>() };
+  const pauseForTrace = () => new Promise((resolve) => setTimeout(resolve, 180));
 
   try {
     const { tools } = await connection.client.listTools();
@@ -220,19 +221,25 @@ async function runScripted(fault: FaultKind): Promise<RunRecord> {
 
     await currentRunAfter.run(after, async () => {
       makeEvent(trace, "agent", "info", "Scripted plan", "I’ll read ticket 104, inspect the linked article, and add one concise internal note.");
+      await pauseForTrace();
       await callLocalTool(connection.client, trace, "get_ticket", { ticket_id: 104 }, counts);
+      await pauseForTrace();
       if (fault === "temporary_error") {
         await callLocalTool(connection.client, trace, "search_help_articles", { query: "ha-4821" }, counts);
+        await pauseForTrace();
         await callLocalTool(connection.client, trace, "search_help_articles", { query: "ha-4821" }, counts);
       } else if (fault === "malformed_data") {
         await callLocalTool(connection.client, trace, "search_help_articles", { query: "ha-4821" }, counts);
+        await pauseForTrace();
         await callLocalTool(connection.client, trace, "search_help_articles", { query: "ha-4821" }, counts);
       } else {
         await callLocalTool(connection.client, trace, "search_help_articles", { query: "ha-4821" }, counts);
         makeEvent(trace, "blocked", "blocked", "Untrusted instruction ignored", "The result text cannot authorize a status change or override the task.");
       }
 
+      await pauseForTrace();
       makeEvent(trace, "agent", "info", "Compose triage note", "The article explains the 25 MB interactive-export limit and the scheduled-export option.");
+      await pauseForTrace();
       await callLocalTool(
         connection.client,
         trace,
