@@ -206,11 +206,11 @@ async function callLocalTool(
 const currentRunAfter = new AsyncLocalStorage<TicketState>();
 const currentEventSink = new AsyncLocalStorage<((event: TraceEvent) => void) | undefined>();
 
-async function runScripted(fault: FaultKind): Promise<RunRecord> {
+async function runScripted(fault: FaultKind, connectMcp: typeof connectTicketMcp): Promise<RunRecord> {
   const before = createTicketFixture();
   const after: TicketState = structuredClone(before);
   const trace: TraceEvent[] = [];
-  const connection = await connectTicketMcp(fault);
+  const connection = await connectMcp(fault);
   const counts = { toolCalls: 0, degradedTools: new Set<string>() };
   const pauseForTrace = () => new Promise((resolve) => setTimeout(resolve, 180));
 
@@ -262,13 +262,13 @@ async function runScripted(fault: FaultKind): Promise<RunRecord> {
   }
 }
 
-async function runWithHanzo(request: RunRequest): Promise<RunRecord> {
+async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicketMcp): Promise<RunRecord> {
   const fault = parseFault(request.fault);
   const model = normalizedModelId(request.model);
   const before = createTicketFixture();
   const after: TicketState = structuredClone(before);
   const trace: TraceEvent[] = [];
-  const connection = await connectTicketMcp(fault);
+  const connection = await connectMcp(fault);
   const counts = { toolCalls: 0, degradedTools: new Set<string>() };
   const apiKey = process.env.HANZO_API_KEY;
   let tokenUsage = 0;
@@ -469,12 +469,13 @@ async function runWithHanzo(request: RunRequest): Promise<RunRecord> {
 export async function executeRun(
   request: RunRequest,
   onEvent?: (event: TraceEvent) => void,
+  connectMcp: typeof connectTicketMcp = connectTicketMcp,
 ): Promise<RunRecord> {
   return currentEventSink.run(onEvent, async () => {
     const fault = parseFault(request.fault);
-    if (request.mode === "scripted") return runScripted(fault);
+    if (request.mode === "scripted") return runScripted(fault, connectMcp);
     if (!request.confirmed) throw new Error("Explicit confirmation is required before a Hanzo request.");
     const maxOutputTokens = Math.max(256, Math.min(8192, Math.floor(request.maxOutputTokens || 2048)));
-    return runWithHanzo({ ...request, mode: "hanzo", fault, model: normalizedModelId(request.model), maxOutputTokens });
+    return runWithHanzo({ ...request, mode: "hanzo", fault, model: normalizedModelId(request.model), maxOutputTokens }, connectMcp);
   });
 }
