@@ -47,6 +47,15 @@ function stringify(value: unknown) {
   }
 }
 
+function errorMessage(value: unknown, fallback: string) {
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const message = (value as Record<string, unknown>).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return value === undefined ? fallback : stringify(value) || fallback;
+}
+
 function ToolstormMark() {
   return (
     <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
@@ -268,8 +277,8 @@ function App() {
           }),
         });
         if (!response.ok) {
-          const data = await response.json() as { error?: string };
-          throw new Error(data.error || "The run could not be started.");
+          const data = await response.json() as { error?: unknown };
+          throw new Error(errorMessage(data.error, "The run could not be started."));
         }
         if (!response.body) throw new Error("The run returned no trace stream.");
 
@@ -280,10 +289,10 @@ function App() {
         let streamError = "";
         const consumeLine = (line: string) => {
           if (!line.trim()) return;
-          const message = JSON.parse(line) as { type: string; event?: TraceEvent; run?: RunRecord; error?: string };
+          const message = JSON.parse(line) as { type: string; event?: TraceEvent; run?: RunRecord; error?: unknown };
           if (message.type === "event" && message.event) setLiveTrace((previous) => [...previous, message.event!]);
           if (message.type === "complete" && message.run) completed = message.run;
-          if (message.type === "error") streamError = message.error || "The run failed.";
+          if (message.type === "error") streamError = errorMessage(message.error, "The run failed.");
         };
 
         while (true) {
