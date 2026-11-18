@@ -88,6 +88,10 @@ export default {
     if (!payload) return jsonError("Request body must be a JSON object.", 400);
 
     const mode: RunMode = payload.mode === "hanzo" ? "hanzo" : "scripted";
+    const isHostedDeployment = process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview";
+    if (isHostedDeployment && mode !== "hanzo") {
+      return jsonError("Hosted runs require Hanzo mode. Scripted runs are available only in local development.", 403);
+    }
     if (mode === "hanzo") {
       if (!process.env.HANZO_API_KEY) {
         return jsonError("Hanzo mode is unavailable because HANZO_API_KEY is not configured on this deployment.", 503);
