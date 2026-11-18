@@ -54,13 +54,9 @@ The checker evaluates the simulation state and trace. It does not ask an LLM to 
 
 ## Free public hosting
 
-The production build is intentionally a static site. To publish it with Cloudflare Pages:
+The public source repository deploys the static preview to [GitHub Pages](https://manateek1.github.io/toolstorm/) from `main` with [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow builds to `dist`; no server functions, secrets, or custom domain are needed. The bundle runs only the scripted preview in the visitor's browser and contains no Hanzo key or model endpoint. Keep Hanzo mode on your local copy.
 
-- Build command: `npm run build:public`
-- Output directory: `dist`
-- No environment variables or server functions are needed.
-
-The published page runs only the scripted preview in the visitor's browser. It has no Hanzo key or remote MCP server. Keep Hanzo mode on your local copy. GitHub Pages is available for public repositories on GitHub Free; the Pages-provided URL avoids domain costs. GitHub may log visitor IP addresses for security, but Toolstorm sends no scenario data from the public preview.
+GitHub Pages is available for public repositories on GitHub Free, and standard GitHub-hosted Actions runners are free for public repositories. GitHub may log visitor IP addresses for security, but Toolstorm sends no scenario data from the public preview.
 
 ## Tool surface and data
 
@@ -80,4 +76,5 @@ The fixture, help article, and fault injection are source-controlled demo data. 
 - [Official MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
 - [MCP SDK client tutorial](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/get-started/first-client.md)
 - [MCP SDK stdio server guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/serving/stdio.md)
-- [Cloudflare Pages limits](https://developers.cloudflare.com/pages/platform/limits/)
+- [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
+- [GitHub Actions billing](https://docs.github.com/en/actions/concepts/billing-and-usage)
