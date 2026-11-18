@@ -38,16 +38,6 @@ interface LocalStatus {
   defaultModel: string;
 }
 
-function shortSnapshot(ticket: TicketState) {
-  return {
-    id: ticket.id,
-    subject: ticket.subject,
-    status: ticket.status,
-    help_article_id: ticket.helpArticleId,
-    internal_note: ticket.internalNotes.at(-1)?.text ?? null,
-  };
-}
-
 function stringify(value: unknown) {
   if (typeof value === "string") return value;
   try {
@@ -77,8 +67,16 @@ function timeLabel(value: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
-function StatusLabel({ status }: { status: TraceEvent["status"] }) {
-  const text = status === "success" ? "Success" : status === "error" ? "Error" : status === "warning" ? "Retry" : status === "blocked" ? "Blocked" : "Step";
+function StatusLabel({ status, kind }: { status: TraceEvent["status"]; kind: TraceEvent["kind"] }) {
+  const text = status === "success"
+    ? "Success"
+    : status === "error"
+      ? "Error"
+      : status === "warning"
+        ? kind === "retry" ? "Retry" : kind === "fault" ? "Injected" : "Warning"
+        : status === "blocked"
+          ? "Blocked"
+          : "Step";
   return <span className={`trace-status trace-status--${status}`}>{text}</span>;
 }
 
@@ -115,7 +113,7 @@ function TraceRow({ event, mode }: { event: TraceEvent; mode: RunMode }) {
           </span>
           {event.detail && <span className="trace-detail">{event.detail}</span>}
         </span>
-        <StatusLabel status={event.status} />
+        <StatusLabel status={event.status} kind={event.kind} />
         <ChevronDown className="trace-chevron" aria-hidden="true" />
       </summary>
       {hasPayload && (
@@ -140,14 +138,27 @@ function TraceRow({ event, mode }: { event: TraceEvent; mode: RunMode }) {
   );
 }
 
-function TicketJson({ title, ticket, after }: { title: string; ticket: TicketState; after?: boolean }) {
+function TicketStateCard({ title, ticket, after }: { title: string; ticket: TicketState; after?: boolean }) {
+  const note = ticket.internalNotes.at(-1)?.text;
+
   return (
     <div className="snapshot-block">
       <div className="snapshot-heading">
         <span>{title}</span>
         {after && ticket.internalNotes.length > 0 && <span className="snapshot-changed">NOTE ADDED</span>}
       </div>
-      <pre className="json-snapshot">{JSON.stringify(shortSnapshot(ticket), null, 2)}</pre>
+      <dl className="snapshot-details">
+        <div><dt>Ticket</dt><dd>#{ticket.id}</dd></div>
+        <div><dt>Status</dt><dd><span className="status-pill">{ticket.status}</span></dd></div>
+        <div><dt>Priority</dt><dd>{ticket.priority}</dd></div>
+        <div><dt>Requester</dt><dd>{ticket.requester}</dd></div>
+        <div className="snapshot-detail--wide"><dt>Subject</dt><dd>{ticket.subject}</dd></div>
+        <div><dt>Help article</dt><dd className="article-id">{ticket.helpArticleId}</dd></div>
+        <div className="snapshot-detail--wide">
+          <dt>Internal note</dt>
+          <dd className={note ? "snapshot-note" : "snapshot-note snapshot-note--empty"}>{note ?? "None added"}</dd>
+        </div>
+      </dl>
     </div>
   );
 }
@@ -361,63 +372,26 @@ function App() {
 
       <main id="top">
         <section className="page-intro" aria-labelledby="page-title">
-          <div>
+          <div className="page-intro-copy">
             <h1 id="page-title">Test an agent under pressure</h1>
-            <p>See how an agent handles a ticket task when an MCP tool fails.</p>
+            <p>{TASK_TEXT}</p>
           </div>
-          <div className="intro-run-status">
+          <div className="hero-actions">
             {currentRun ? (
               <span className={`result-chip result-chip--${currentRun.result}`}>
                 {currentRun.result === "passed" ? <Check aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-                {currentRun.mode === "scripted" ? "Scripted result" : currentRun.model}
+                {currentRun.result === "passed" ? "Run passed" : outcomeText(currentRun.result)}
               </span>
-            ) : <span className="quiet-label">No run selected</span>}
+            ) : <span className="quiet-label">Ready to run</span>}
+            <button className="button button--primary" onClick={requestRun} type="button" disabled={busy || (mode === "hanzo" && !status?.hasHanzoKey && !PUBLIC_PREVIEW)}>
+              {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
+              <span>{busy ? "Running…" : "Run scenario"}</span>
+            </button>
           </div>
         </section>
 
-        <section className="toolbar" aria-label="Run controls">
-          <div className="toolbar-settings">
-            {!PUBLIC_PREVIEW && (
-              <label className="field field--mode">
-                <span className="field-label">Mode</span>
-                <span className="select-wrap">
-                  <select value={mode} onChange={(event) => handleModeChange(event.target.value)} aria-label="Model mode" disabled={busy}>
-                    <option value="scripted">Scripted MCP demo</option>
-                    {status?.hasHanzoKey && <option value="hanzo">Hanzo model</option>}
-                    {!status?.hasHanzoKey && <option value="hanzo" disabled>Hanzo model · key required</option>}
-                  </select>
-                  <ChevronDown aria-hidden="true" />
-                </span>
-              </label>
-            )}
-            {PUBLIC_PREVIEW && (
-              <div className="field field--mode" aria-label="Public demo mode">
-                <span className="field-label">Mode</span>
-                <span className="mode-static"><CirclePlay aria-hidden="true" /> Scripted preview</span>
-              </div>
-            )}
-            {mode === "hanzo" && !PUBLIC_PREVIEW && (
-              <>
-                <label className="field field--model">
-                  <span className="field-label">Hanzo model ID</span>
-                  <input value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} placeholder="enso-auto" disabled={busy} />
-                </label>
-                <label className="field field--tokens">
-                  <span className="field-label">Output cap</span>
-                  <select value={tokenLimit} onChange={(event) => setTokenLimit(Number(event.target.value))} aria-label="Maximum output tokens per run" disabled={busy}>
-                    {[512, 1024, 2048, 4096, 8192].map((value) => <option key={value} value={value}>{value.toLocaleString()} tokens</option>)}
-                  </select>
-                </label>
-              </>
-            )}
-            {mode === "scripted" && !PUBLIC_PREVIEW && (
-              <span className="settings-note">
-                <Shield aria-hidden="true" /> No external model call
-              </span>
-            )}
-          </div>
+        <section className="toolbar" aria-label="Run actions">
           <div className="toolbar-actions">
-            {!PUBLIC_PREVIEW && mode === "hanzo" && !status?.hasHanzoKey && <span className="key-missing">Add HANZO_API_KEY locally</span>}
             <button className="button button--quiet" onClick={handleReset} type="button" title="Restore the ticket display to the original fixture" disabled={busy}>
               <RotateCcw aria-hidden="true" /><span>Reset</span>
             </button>
@@ -432,19 +406,12 @@ function App() {
                 <RotateCcw aria-hidden="true" /><span>Replay</span>
               </button>
             )}
-            <button className="button button--primary" onClick={requestRun} type="button" disabled={busy || (mode === "hanzo" && !status?.hasHanzoKey && !PUBLIC_PREVIEW)}>
-              {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
-              <span>{busy ? "Running…" : "Run scenario"}</span>
-            </button>
           </div>
         </section>
 
         <div className="announcements" aria-live="polite">
           {error && <div className="banner banner--error"><CircleX aria-hidden="true" /><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X aria-hidden="true" /></button></div>}
           {!error && notice && <div className="banner banner--notice"><CheckCircle2 aria-hidden="true" /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message"><X aria-hidden="true" /></button></div>}
-          {!PUBLIC_PREVIEW && status && !status.hasHanzoKey && mode === "scripted" && (
-            <div className="banner banner--subtle"><LockKeyhole aria-hidden="true" /><span>HANZO_API_KEY is empty. Scripted MCP mode works without a key.</span></div>
-          )}
           {!PUBLIC_PREVIEW && status && !status.local && (
             <div className="banner banner--error"><CircleX aria-hidden="true" /><span>Local API is unavailable. Start both services with <code>npm run dev</code>.</span></div>
           )}
@@ -458,18 +425,13 @@ function App() {
             </div>
             <div className="scenario-choice" aria-current="step">
               <FileText aria-hidden="true" />
-              <span>Ticket 104 triage</span>
+              <span><strong>Ticket 104 triage</strong><small>Can't export reports · {shownBefore.requester}</small></span>
               <Check aria-hidden="true" className="scenario-check" />
             </div>
 
-            <div className="control-section task-section">
-              <h3><CircleHelp aria-hidden="true" /> Task</h3>
-              <p className="task-text">{TASK_TEXT}</p>
-            </div>
-
             <fieldset className="control-section fault-section">
-              <legend><Sparkles aria-hidden="true" /> Fault (MCP tool behavior)</legend>
-              <p className="section-help">Choose one controlled failure to inject into the simulated tool result.</p>
+              <legend><Sparkles aria-hidden="true" /> Inject a fault</legend>
+              <p className="section-help">Choose the MCP behavior the agent must recover from.</p>
               <div className="fault-options">
                 {FAULTS.map((item) => (
                   <label className={`fault-option ${fault === item.id ? "fault-option--selected" : ""}`} key={item.id}>
@@ -480,6 +442,44 @@ function App() {
                 ))}
               </div>
             </fieldset>
+
+            <section className="control-section model-section" aria-labelledby="model-heading">
+              <h3 id="model-heading"><Bot aria-hidden="true" /> Model mode</h3>
+              {!PUBLIC_PREVIEW ? (
+                <label className="field field--mode">
+                  <span className="sr-only">Model mode</span>
+                  <span className="select-wrap">
+                    <select value={mode} onChange={(event) => handleModeChange(event.target.value)} aria-label="Model mode" disabled={busy}>
+                      <option value="scripted">Scripted MCP demo</option>
+                      {status?.hasHanzoKey && <option value="hanzo">Hanzo model</option>}
+                      {!status?.hasHanzoKey && <option value="hanzo" disabled>Hanzo model · key required</option>}
+                    </select>
+                    <ChevronDown aria-hidden="true" />
+                  </span>
+                </label>
+              ) : (
+                <div className="mode-static"><CirclePlay aria-hidden="true" /> Scripted preview</div>
+              )}
+              {mode === "hanzo" && !PUBLIC_PREVIEW ? (
+                <div className="model-options">
+                  <label className="field field--model">
+                    <span className="field-label">Hanzo model ID</span>
+                    <input value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} placeholder="enso-auto" disabled={busy} />
+                  </label>
+                  <label className="field field--tokens">
+                    <span className="field-label">Output cap</span>
+                    <select value={tokenLimit} onChange={(event) => setTokenLimit(Number(event.target.value))} aria-label="Maximum output tokens per run" disabled={busy}>
+                      {[512, 1024, 2048, 4096, 8192].map((value) => <option key={value} value={value}>{value.toLocaleString()} tokens</option>)}
+                    </select>
+                  </label>
+                </div>
+              ) : (
+                <p className="mode-description">
+                  {PUBLIC_PREVIEW ? "This public preview uses a scripted trace; it makes no MCP or LLM calls." : "Calls the local MCP tools without using model credits."}
+                </p>
+              )}
+              {!PUBLIC_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">Set HANZO_API_KEY locally to enable confirmed Hanzo runs.</p>}
+            </section>
 
             <section className="control-section saved-section" aria-labelledby="saved-heading">
               <div className="saved-heading-row">
@@ -545,8 +545,8 @@ function App() {
                 <h2 id="ticket-state-heading">Ticket state</h2>
                 {currentRun && <span className={`result-mini result-mini--${currentRun.result}`}>{currentRun.result}</span>}
               </div>
-              <TicketJson title="Before · original fixture" ticket={shownBefore} />
-              <TicketJson title="After · run state" ticket={shownAfter} after />
+              <TicketStateCard title="Before · original fixture" ticket={shownBefore} />
+              <TicketStateCard title="After · run state" ticket={shownAfter} after />
               {currentRun && <div className="run-metadata"><span>Fault</span><strong>{faultTitle(currentRun.fault)}</strong></div>}
             </section>
 
