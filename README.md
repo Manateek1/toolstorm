@@ -8,7 +8,7 @@ Toolstorm is an experimental, local-first demo for seeing how an AI agent handle
 
 ## Hosted demos and full app
 
-**[Open the GitHub Pages walkthrough](https://manateek1.github.io/toolstorm/)**. It is a static scripted trace because GitHub Pages cannot run the Node server. The Vercel deployment runs the synthetic MCP server for each run and can use Hanzo when its server environment is configured.
+**[Open the live Vercel app](https://toolstorm.vercel.app)**. It runs the synthetic MCP server for each run and requires Hanzo mode; it never substitutes a scripted trace for a real run. **[Open the GitHub Pages walkthrough](https://manateek1.github.io/toolstorm/)** for the explicitly labeled static scripted trace, since GitHub Pages cannot run the Node server.
 
 ## Run locally
 
@@ -35,9 +35,9 @@ The fault selector offers:
 
 The Vercel app serves the same dashboard and `/api` endpoints. Each run creates a fresh synthetic ticket server and MCP client from the official TypeScript SDK, connects them with the SDK's in-memory transport, and streams the real tool calls and results into the trace. Ticket data and injected faults stay inside this fictional simulation.
 
-To enable live model runs, add `HANZO_API_KEY` as a **Secret** environment variable in the Vercel project for Production (and Preview if needed). Optionally set `HANZO_MODEL_ID` to the default model ID. Redeploy after changing environment variables. The key is read only by server functions; `/api/status` exposes only whether it is configured. Hanzo mode is selected by default when a key is present, and every run still requires confirmation before any prompt or simulated tool result is sent.
+To enable live model runs, add `HANZO_API_KEY` as a **Secret** environment variable in the Vercel project for Production (and Preview if needed). Optionally set `HANZO_MODEL_ID` to the default model ID. Redeploy after changing environment variables. The key is read only by server functions; `/api/status` exposes only whether it is configured. The Vercel build requires Hanzo mode and blocks runs until the key is present. Every run still requires confirmation before any prompt or simulated tool result is sent.
 
-The GitHub Pages workflow sets its own scripted-preview flag; that flag is not used by Vercel. Vercel Hobby hosting has plan limits; see [Vercel pricing](https://vercel.com/pricing).
+The GitHub Pages workflow alone sets the scripted-preview flag, so its trace cannot be mistaken for a Vercel run. Vercel Hobby hosting has plan limits; see [Vercel pricing](https://vercel.com/pricing).
 
 ### Hanzo mode
 

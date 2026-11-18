@@ -29,6 +29,7 @@ import type { FaultKind, OutcomeCheck, RunMode, RunRecord, TraceEvent, TicketSta
 import { clearRunHistory, exportRun, readRunHistory, saveRunHistory } from "./lib/history";
 
 const PUBLIC_SCRIPTED_PREVIEW = import.meta.env.VITE_PUBLIC_SCRIPTED_PREVIEW === "true";
+const HANZO_ONLY_BUILD = import.meta.env.PROD && !PUBLIC_SCRIPTED_PREVIEW;
 const INITIAL_FAULT: FaultKind = "temporary_error";
 
 interface LocalStatus {
@@ -197,11 +198,14 @@ function CheckRow({ check }: { check: OutcomeCheck }) {
 
 function App() {
   const [fault, setFault] = useState<FaultKind>(INITIAL_FAULT);
-  const [mode, setMode] = useState<RunMode>("scripted");
+  const [mode, setMode] = useState<RunMode>(HANZO_ONLY_BUILD ? "hanzo" : "scripted");
   const [model, setModel] = useState("enso-auto");
   const [tokenLimit, setTokenLimit] = useState(2048);
   const [status, setStatus] = useState<LocalStatus | null>(null);
-  const [history, setHistory] = useState<RunRecord[]>(readRunHistory);
+  const [history, setHistory] = useState<RunRecord[]>(() => {
+    const saved = readRunHistory();
+    return HANZO_ONLY_BUILD ? saved.filter((run) => run.mode === "hanzo") : saved;
+  });
   const [currentRun, setCurrentRun] = useState<RunRecord | null>(() => PUBLIC_SCRIPTED_PREVIEW ? runScriptedScenario(INITIAL_FAULT) : null);
   const [liveTrace, setLiveTrace] = useState<TraceEvent[]>([]);
   const [busy, setBusy] = useState(false);
@@ -239,7 +243,7 @@ function App() {
         if (cancelled) return;
         setStatus(value);
         setModel(value.defaultModel || "enso-auto");
-        if (value.hasHanzoKey) setMode("hanzo");
+        if (value.hasHanzoKey || HANZO_ONLY_BUILD) setMode("hanzo");
       })
       .catch(() => {
         if (!cancelled) setStatus({ available: false, source: "unknown", hasHanzoKey: false, defaultModel: "enso-auto" });
@@ -249,6 +253,10 @@ function App() {
 
   async function startRun(nextFault = fault, nextMode = mode, confirmed = false) {
     if (busy) return;
+    if (HANZO_ONLY_BUILD && (!status?.hasHanzoKey || nextMode !== "hanzo")) {
+      setError("This hosted app requires Hanzo. Add HANZO_API_KEY to the Vercel project environment before running it.");
+      return;
+    }
     setFault(nextFault);
     setError("");
     setNotice("");
@@ -266,11 +274,12 @@ function App() {
           setLiveTrace((previous) => [...previous, event]);
         }
       } else {
+        const runMode = HANZO_ONLY_BUILD ? "hanzo" : nextMode;
         const response = await fetch("/api/run", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
           body: JSON.stringify({
-            mode: nextMode,
+            mode: runMode,
             fault: nextFault,
             model,
             maxOutputTokens: tokenLimit,
@@ -313,7 +322,7 @@ function App() {
       setCurrentRun(run);
       setLiveTrace([]);
       setHistory((previous) => [run, ...previous.filter((entry) => entry.id !== run.id)].slice(0, 16));
-      setNotice(nextMode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW
+      setNotice(run.mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW
         ? `${run.model} finished. ${run.trace.filter((event) => event.kind === "agent" && event.title.startsWith("Model turn")).length} model turns used.`
         : PUBLIC_SCRIPTED_PREVIEW
           ? "Scripted walkthrough complete. No server or LLM was used by this page."
@@ -328,7 +337,7 @@ function App() {
   }
 
   function requestRun() {
-    if (PUBLIC_SCRIPTED_PREVIEW || mode === "scripted") {
+    if (PUBLIC_SCRIPTED_PREVIEW || (!HANZO_ONLY_BUILD && mode === "scripted")) {
       void startRun(fault, mode, false);
       return;
     }
@@ -338,7 +347,8 @@ function App() {
   function replayCurrent() {
     if (!currentRun) return;
     setFault(currentRun.fault);
-    if (mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW) {
+    if ((HANZO_ONLY_BUILD || (mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW))) {
+      setMode("hanzo");
       setConfirmOpen(true);
     } else {
       void startRun(currentRun.fault, mode, false);
@@ -373,13 +383,11 @@ function App() {
   }
 
   const demoCaption = PUBLIC_SCRIPTED_PREVIEW
-    ? "Hosted walkthrough · scripted trace only"
-    : status?.source === "vercel"
-      ? mode === "hanzo"
-        ? "Hanzo calls require confirmation · key stays server-side"
-        : status.hasHanzoKey
-          ? "Vercel MCP ready · Hanzo calls stay off until confirmed"
-          : "Vercel MCP simulation · no model calls"
+    ? "GitHub Pages scripted walkthrough · no MCP server or LLM calls"
+    : HANZO_ONLY_BUILD
+      ? status?.hasHanzoKey
+      ? "Hanzo model · confirmation required before every run"
+      : "Hanzo key required · no scripted fallback"
     : mode === "hanzo"
       ? "Hanzo calls require confirmation · key stays server-side"
       : "Local scripted MCP run · no LLM call";
@@ -393,9 +401,9 @@ function App() {
           <span>Toolstorm</span>
         </a>
         <div className="privacy-indicator" aria-live="polite">
-          {mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? <LockKeyhole aria-hidden="true" /> : <Laptop aria-hidden="true" />}
+          {!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") ? <LockKeyhole aria-hidden="true" /> : <Laptop aria-hidden="true" />}
           <span>{demoCaption}</span>
-          <span className={`privacy-dot ${mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? "privacy-dot--amber" : ""}`} />
+          <span className={`privacy-dot ${!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") ? "privacy-dot--amber" : ""}`} />
         </div>
       </header>
 
@@ -412,7 +420,7 @@ function App() {
                 {currentRun.result === "passed" ? "Run passed" : outcomeText(currentRun.result)}
               </span>
             ) : <span className="quiet-label">Ready to run</span>}
-            <button className="button button--primary" onClick={requestRun} type="button" disabled={busy || (mode === "hanzo" && !status?.hasHanzoKey && !PUBLIC_SCRIPTED_PREVIEW)}>
+            <button className="button button--primary" onClick={requestRun} type="button" disabled={busy || (!PUBLIC_SCRIPTED_PREVIEW && ((HANZO_ONLY_BUILD && !status?.hasHanzoKey) || (mode === "hanzo" && !status?.hasHanzoKey)))}>
               {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
               <span>{busy ? "Running…" : "Run scenario"}</span>
             </button>
@@ -441,7 +449,10 @@ function App() {
         <div className="announcements" aria-live="polite">
           {error && <div className="banner banner--error"><CircleX aria-hidden="true" /><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X aria-hidden="true" /></button></div>}
           {!error && notice && <div className="banner banner--notice"><CheckCircle2 aria-hidden="true" /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message"><X aria-hidden="true" /></button></div>}
-          {!PUBLIC_SCRIPTED_PREVIEW && status && !status.available && (
+          {HANZO_ONLY_BUILD && status?.source === "vercel" && !status.hasHanzoKey && (
+            <div className="banner banner--error"><CircleX aria-hidden="true" /><span>Real Hanzo runs are paused because this Vercel deployment has no HANZO_API_KEY. No scripted trace will be played.</span></div>
+          )}
+          {status && !status.available && (
             <div className="banner banner--error"><CircleX aria-hidden="true" /><span>{status.source === "vercel" ? "The hosted runner is unavailable. Please retry shortly." : status.source === "local" ? <>Local API is unavailable. Start both services with <code>npm run dev</code>.</> : "Toolstorm runner did not respond. Refresh the page or start the local app with npm run dev."}</span></div>
           )}
         </div>
@@ -474,7 +485,9 @@ function App() {
 
             <section className="control-section model-section" aria-labelledby="model-heading">
               <h3 id="model-heading"><Bot aria-hidden="true" /> Model mode</h3>
-              {!PUBLIC_SCRIPTED_PREVIEW ? (
+              {PUBLIC_SCRIPTED_PREVIEW ? (
+                <div className="mode-static"><CirclePlay aria-hidden="true" /> Hosted scripted walkthrough</div>
+              ) : !HANZO_ONLY_BUILD ? (
                 <label className="field field--mode">
                   <span className="sr-only">Model mode</span>
                   <span className="select-wrap">
@@ -487,7 +500,7 @@ function App() {
                   </span>
                 </label>
               ) : (
-                <div className="mode-static"><CirclePlay aria-hidden="true" /> Hosted scripted walkthrough</div>
+                <div className="mode-static"><LockKeyhole aria-hidden="true" /> Hanzo model · {status?.hasHanzoKey ? "server key ready" : "server key required"}</div>
               )}
               {mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? (
                 <div className="model-options">
@@ -505,15 +518,15 @@ function App() {
               ) : (
                 <p className="mode-description">
                   {PUBLIC_SCRIPTED_PREVIEW
-                    ? "This public page plays a scripted trace. Run npm run dev to use the MCP app."
-                    : status?.source === "vercel"
-                      ? status.hasHanzoKey
-                        ? "The Hanzo model calls the configured API from this server and uses the same local MCP tools. No request is sent until you confirm."
-                        : "This Vercel app runs the synthetic tools through an in-memory MCP server. Add HANZO_API_KEY in Vercel to enable confirmed Hanzo runs."
-                      : "Calls the local MCP tools without using model credits."}
+                    ? "This GitHub Pages page replays a scripted trace. No server or LLM is used."
+                    : HANZO_ONLY_BUILD
+                    ? status?.hasHanzoKey
+                      ? "The Hanzo model calls the configured API from this server and uses the same local MCP tools. No request is sent until you confirm."
+                      : "Real Hanzo runs are required in the hosted app. Add HANZO_API_KEY in Vercel to enable them."
+                    : "Calls the local MCP tools without using model credits."}
                 </p>
               )}
-              {!PUBLIC_SCRIPTED_PREVIEW && !status?.hasHanzoKey && <p className="key-hint">{status?.source === "vercel" ? "Set HANZO_API_KEY in the Vercel project environment to enable Hanzo mode." : "Set HANZO_API_KEY locally to enable confirmed Hanzo runs."}</p>}
+              {!PUBLIC_SCRIPTED_PREVIEW && status && !status.hasHanzoKey && <p className="key-hint">{status.source === "vercel" ? "Set HANZO_API_KEY in Vercel Project Settings → Environment Variables, then redeploy." : status.source === "local" ? "Set HANZO_API_KEY locally to enable confirmed Hanzo runs." : "Hanzo key status is unavailable because the server did not respond."}</p>}
             </section>
 
             <section className="control-section saved-section" aria-labelledby="saved-heading">
@@ -553,7 +566,7 @@ function App() {
               </div>
             {(currentRun || busy) && <span className={`trace-mode ${(busy ? mode : currentRun?.mode) === "hanzo" ? "trace-mode--live" : ""}`}>{(busy ? mode : currentRun?.mode) === "hanzo" ? "HANZO RUN" : PUBLIC_SCRIPTED_PREVIEW ? "SCRIPTED WALKTHROUGH" : "SCRIPTED MCP"}</span>}
             </div>
-            {!PUBLIC_SCRIPTED_PREVIEW && status && !status.available && (
+            {status && !status.available && (
               <div className="trace-empty"><Activity aria-hidden="true" /><strong>{status.source === "vercel" ? "Hosted runner unavailable" : status.source === "local" ? "Local runner not connected" : "Runner did not respond"}</strong><span>{status.source === "vercel" ? "The serverless MCP simulation could not be reached." : status.source === "local" ? "Start the local app to connect to its MCP server." : "Refresh the page or start the local app with npm run dev."}</span></div>
             )}
             {busy ? (
