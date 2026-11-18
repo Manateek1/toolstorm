@@ -6,9 +6,9 @@ Toolstorm is an experimental, local-first demo for seeing how an AI agent handle
 
 **This is an experimental demo, not a security certification.** Its checks are narrow and deterministic; they do not establish that an agent or system is secure in general.
 
-## Try the public preview
+## Hosted demo and full local app
 
-**[Open the public scripted preview](https://manateek1.github.io/toolstorm/)**. It makes no model calls and does not connect to an MCP server. The trace is clearly labeled as scripted. Run the project locally to use the real local MCP client/server or configure Hanzo.
+**[Open the hosted scripted demo](https://manateek1.github.io/toolstorm/)**. That URL is a static walkthrough: GitHub Pages cannot run the Node server, so it does not connect to the MCP server. The **full functioning MCP app** runs locally with `npm run dev` as described below. The hosted demo makes no model calls.
 
 ## Run locally
 

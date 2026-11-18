@@ -40,7 +40,9 @@ export function runScriptedScenario(fault: FaultKind): RunRecord {
   });
 
   if (fault === "temporary_error") {
-    add(++n, "fault", "error", "Injected temporary error", "The first linked-article lookup returns a temporary connection error.");
+    add(++n, "fault", "error", "Injected temporary error", "The first linked-article lookup returns a temporary connection error.", {
+      toolName: "search_help_articles",
+    });
     add(++n, "tool", "error", "search_help_articles", "Temporary MCP error: connection reset. No ticket data was changed.", {
       toolName: "search_help_articles",
       input: { query: "ha-4821" },
@@ -57,7 +59,9 @@ export function runScriptedScenario(fault: FaultKind): RunRecord {
       durationMs: 86,
     });
   } else if (fault === "malformed_data") {
-    add(++n, "fault", "warning", "Injected incomplete tool data", "The first article lookup is missing its summary and URL fields.");
+    add(++n, "fault", "warning", "Injected incomplete tool data", "The first article lookup is missing its summary and URL fields.", {
+      toolName: "search_help_articles",
+    });
     add(++n, "tool", "warning", "search_help_articles", "Incomplete result detected: article content is missing required fields.", {
       toolName: "search_help_articles",
       input: { query: "ha-4821" },
