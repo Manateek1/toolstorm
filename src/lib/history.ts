@@ -17,6 +17,10 @@ export function readRunHistory(): RunRecord[] {
 
 export function saveRunHistory(runs: RunRecord[]) {
   try {
+    if (runs.length === 0) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(runs.slice(0, MAX_SAVED_RUNS)));
   } catch {
     // Run results remain visible for this session if browser storage is unavailable.
