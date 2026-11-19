@@ -70,4 +70,5 @@ export interface RunRequest {
   model: string;
   maxOutputTokens: number;
   confirmed: boolean;
+  signal?: AbortSignal;
 }
