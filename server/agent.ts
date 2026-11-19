@@ -270,7 +270,7 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
   const trace: TraceEvent[] = [];
   const connection = await connectMcp(fault);
   const counts = { toolCalls: 0, degradedTools: new Set<string>() };
-  const apiKey = process.env.HANZO_API_KEY;
+  const apiKey = process.env.HANZO_API_KEY?.trim();
   let tokenUsage = 0;
   let reportedTokenUsage = 0;
 
@@ -316,6 +316,8 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
         const start = performance.now();
         let response: Response;
         try {
+          const timeout = AbortSignal.timeout(45_000);
+          const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout;
           response = await fetch(HANZO_ENDPOINT, {
             method: "POST",
             headers: {
@@ -333,6 +335,7 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
               stream: false,
               reasoning_effort: "instant",
             }),
+            signal,
           });
         } catch {
           makeEvent(trace, "agent", "error", `Hanzo model turn ${turn} failed`, "Could not reach the Hanzo chat-completions endpoint.");
@@ -392,6 +395,11 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
 
         let limitReached = false;
         for (const toolCall of toolCalls) {
+          if (request.signal?.aborted) {
+            makeEvent(trace, "system", "warning", "Run cancelled", "The browser disconnected, so Toolstorm stopped before another tool call.");
+            limitReached = true;
+            break;
+          }
           if (counts.toolCalls >= MAX_TOOL_CALLS) {
             makeEvent(trace, "system", "warning", "Tool-call limit reached", `Run stopped before exceeding ${MAX_TOOL_CALLS} local MCP tool calls.`);
             limitReached = true;

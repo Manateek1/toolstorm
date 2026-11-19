@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowUpRight,
   ArrowDownToLine,
   Bot,
   Braces,
@@ -37,6 +38,7 @@ interface LocalStatus {
   source: "local" | "vercel" | "unknown";
   hasHanzoKey: boolean;
   defaultModel: string;
+  maxOutputTokens?: number;
 }
 
 function stringify(value: unknown) {
@@ -200,7 +202,7 @@ function App() {
   const [fault, setFault] = useState<FaultKind>(INITIAL_FAULT);
   const [mode, setMode] = useState<RunMode>(HANZO_ONLY_BUILD ? "hanzo" : "scripted");
   const [model, setModel] = useState("enso-auto");
-  const [tokenLimit, setTokenLimit] = useState(2048);
+  const [tokenLimit, setTokenLimit] = useState(HANZO_ONLY_BUILD ? 512 : 2048);
   const [status, setStatus] = useState<LocalStatus | null>(null);
   const [history, setHistory] = useState<RunRecord[]>(() => {
     const saved = readRunHistory();
@@ -243,6 +245,7 @@ function App() {
         if (cancelled) return;
         setStatus(value);
         setModel(value.defaultModel || "enso-auto");
+        if (HANZO_ONLY_BUILD && value.maxOutputTokens) setTokenLimit(value.maxOutputTokens);
         if (value.hasHanzoKey || HANZO_ONLY_BUILD) setMode("hanzo");
       })
       .catch(() => {
@@ -281,9 +284,8 @@ function App() {
           body: JSON.stringify({
             mode: runMode,
             fault: nextFault,
-            model,
-            maxOutputTokens: tokenLimit,
             confirmed,
+            ...(!HANZO_ONLY_BUILD && runMode === "hanzo" ? { model, maxOutputTokens: tokenLimit } : {}),
           }),
         });
         if (!response.ok) {
@@ -386,8 +388,8 @@ function App() {
     ? "GitHub Pages scripted walkthrough · no MCP server or LLM calls"
     : HANZO_ONLY_BUILD
       ? status?.hasHanzoKey
-      ? "Hanzo model · confirmation required before every run"
-      : "Hanzo key required · no scripted fallback"
+      ? "Public demo · confirm before each Hanzo run"
+      : "Public demo · runner unavailable"
     : mode === "hanzo"
       ? "Hanzo calls require confirmation · key stays server-side"
       : "Local scripted MCP run · no LLM call";
@@ -400,18 +402,24 @@ function App() {
           <span className="brand-mark"><ToolstormMark /></span>
           <span>Toolstorm</span>
         </a>
-        <div className="privacy-indicator" aria-live="polite">
-          {!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") ? <LockKeyhole aria-hidden="true" /> : <Laptop aria-hidden="true" />}
-          <span>{demoCaption}</span>
-          <span className={`privacy-dot ${!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") ? "privacy-dot--amber" : ""}`} />
-        </div>
+        <nav className="topbar-actions" aria-label="Project links and run status">
+          <a className="source-link" href="https://github.com/Manateek1/toolstorm" target="_blank" rel="noreferrer">
+            <span>View source</span><ArrowUpRight aria-hidden="true" />
+          </a>
+          <div className="privacy-indicator" aria-live="polite">
+            {!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") ? <LockKeyhole aria-hidden="true" /> : <Laptop aria-hidden="true" />}
+            <span>{demoCaption}</span>
+            <span className={`privacy-dot ${!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") ? "privacy-dot--amber" : ""}`} />
+          </div>
+        </nav>
       </header>
 
       <main id="top">
         <section className="page-intro" aria-labelledby="page-title">
           <div className="page-intro-copy">
-            <h1 id="page-title">Test an agent under pressure</h1>
-            <p>{TASK_TEXT}</p>
+            <div className="hero-kicker"><span className="hero-kicker-dot" />PUBLIC TECHNICAL DEMO<span className="hero-kicker-divider" />SYNTHETIC DATA</div>
+            <h1 id="page-title">Can an AI agent recover when its tools fail?</h1>
+            <p>The task stays fixed: “{TASK_TEXT}” Choose a tool fault and inspect the calls, retries, and deterministic safety checks.</p>
           </div>
           <div className="hero-actions">
             {currentRun ? (
@@ -484,7 +492,7 @@ function App() {
             </fieldset>
 
             <section className="control-section model-section" aria-labelledby="model-heading">
-              <h3 id="model-heading"><Bot aria-hidden="true" /> Model mode</h3>
+              <h3 id="model-heading"><Bot aria-hidden="true" /> Execution</h3>
               {PUBLIC_SCRIPTED_PREVIEW ? (
                 <div className="mode-static"><CirclePlay aria-hidden="true" /> Hosted scripted walkthrough</div>
               ) : !HANZO_ONLY_BUILD ? (
@@ -502,7 +510,12 @@ function App() {
               ) : (
                 <div className="mode-static"><LockKeyhole aria-hidden="true" /> Hanzo model · {status?.hasHanzoKey ? "server key ready" : "server key required"}</div>
               )}
-              {mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? (
+              {HANZO_ONLY_BUILD ? (
+                <div className="public-run-config" aria-label="Public run limits">
+                  <div><span>Server model</span><strong>{model}</strong></div>
+                  <div><span>Run ceiling</span><strong>512 output tokens</strong></div>
+                </div>
+              ) : mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? (
                 <div className="model-options">
                   <label className="field field--model">
                     <span className="field-label">Hanzo model ID</span>
@@ -627,6 +640,7 @@ function App() {
       <footer className="app-footer">
         <span><LockKeyhole aria-hidden="true" /> {PUBLIC_SCRIPTED_PREVIEW ? "Scripted demo data and saved run history stay in this browser." : status?.source === "vercel" ? "Synthetic data stays in the Vercel simulation; run history stays in this browser." : "Demo data stays on this machine; saved run history stays in this browser."}</span>
         {!PUBLIC_SCRIPTED_PREVIEW && mode === "hanzo" && <span>Confirmed Hanzo runs send the task prompt and simulated tool results to Hanzo.</span>}
+        {HANZO_ONLY_BUILD && <span><Shield aria-hidden="true" /> Public runs use bot screening and short-term rate limits.</span>}
         <span>Experimental demo · not a security certification</span>
       </footer>
 
@@ -636,7 +650,7 @@ function App() {
             <button className="modal-close" type="button" aria-label="Close confirmation" onClick={() => setConfirmOpen(false)}><X aria-hidden="true" /></button>
             <span className="modal-icon"><LockKeyhole aria-hidden="true" /></span>
             <h2 id="confirm-title">Confirm a Hanzo model run</h2>
-            <p id="confirm-description">Toolstorm will send the task prompt and simulated ticket/help-article tool results to Hanzo. This may use credits on your Hanzo account.</p>
+            <p id="confirm-description">Toolstorm will send the fixed task prompt and simulated ticket/help-article results to Hanzo using this demo's server key. This may use the demo owner's Hanzo credits.</p>
             <div className="confirmation-facts">
               <span><CheckCircle2 aria-hidden="true" /> Only the fixed fictional ticket scenario is sent</span>
               <span><CheckCircle2 aria-hidden="true" /> Model: {model} · up to {tokenLimit.toLocaleString()} output tokens, 5 model turns, and 8 tool calls</span>
