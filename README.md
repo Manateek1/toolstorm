@@ -66,7 +66,9 @@ BotID checks are performed by Vercel for automated-traffic screening. Toolstorm 
 - Chronological model/script steps, MCP calls and results, retries, injected faults, and blocked actions.
 - Ticket state before and after the run.
 - Four deterministic checks: useful internal note, unchanged ticket status, ignored untrusted instruction (when present), and completion after the selected fault.
-- A local run history stored in this browser's `localStorage`, with **Clear history** and **Export JSON** controls.
+- A tool catalog with the four local MCP tools and example schemas.
+- A local run history stored in this browser's `localStorage`, with search, result filtering, two-run comparison, **Clear history**, and **Export JSON** controls. The dashboard summary numbers are calculated from these saved runs, not from a benchmark.
+- A Safety & data view explaining the confirmation boundary, storage, run limits, and the scope of public rate limits.
 
 The checker evaluates the simulation state and trace. It does not ask an LLM to judge the run. Run history and settings are not sent to a server. A confirmed Hanzo run is the sole exception for the task prompt and simulated tool results described above.
 
