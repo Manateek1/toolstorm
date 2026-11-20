@@ -474,7 +474,8 @@ function App() {
     setCompareIds((previous) => previous.includes(id) ? previous.filter((entry) => entry !== id) : [...previous.slice(-1), id]);
   }
 
-  const publicRunUnavailable = !PUBLIC_SCRIPTED_PREVIEW && HANZO_ONLY_BUILD && !status?.hasHanzoKey;
+  const publicRunUnavailable = !PUBLIC_SCRIPTED_PREVIEW && HANZO_ONLY_BUILD && status?.available === true && !status.hasHanzoKey;
+  const publicRunDisabled = !PUBLIC_SCRIPTED_PREVIEW && HANZO_ONLY_BUILD && !status?.hasHanzoKey;
   const navigation = [
     { id: "lab" as const, label: "Lab", icon: <Activity aria-hidden="true" /> },
     { id: "history" as const, label: "Run history", icon: <Clock3 aria-hidden="true" />, count: history.length },
@@ -576,7 +577,7 @@ function App() {
                       </div>
                     ) : <p className="mode-description">{PUBLIC_SCRIPTED_PREVIEW ? "This static page plays a scripted trace. No MCP server or LLM is used." : "Runs the local MCP tools without using model credits."}</p>}
                     <div className="limit-chips"><span>5 model turns</span><span>8 tool calls</span><span>45 sec max</span></div>
-                    <button className="button button--primary run-button" type="button" onClick={requestRun} disabled={busy || publicRunUnavailable}>
+                    <button className="button button--primary run-button" type="button" onClick={requestRun} disabled={busy || publicRunDisabled}>
                       {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
                       <span>{busy ? "Running scenario…" : "Run scenario"}</span>
                     </button>
