@@ -1,5 +1,7 @@
 # Toolstorm
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/manateek1-toolstorm-1ua3v9?v=2f31b74b6de9a3b8b4a28fd7d9f8cbac)](https://m8ven.ai/mcp/manateek1-toolstorm-1ua3v9?s=readme)
+
 Toolstorm is an experimental public technical demo for seeing how an AI agent handles a support-ticket task when an MCP tool fails. It uses one fictional ticket system and one repeatable scenario:
 
 > Read ticket 104, check the linked help article, and add a concise internal triage note.
