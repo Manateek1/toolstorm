@@ -223,7 +223,7 @@ export default {
       mode,
       fault: parseFault(payload.fault),
       model: isHostedDeployment
-        ? process.env.HANZO_MODEL_ID?.trim() || "enso-auto"
+        ? process.env.VERCEL_ENV === "preview" ? "enso-free" : process.env.HANZO_MODEL_ID?.trim() || "enso-auto"
         : typeof payload.model === "string" ? payload.model.trim().slice(0, 120) : process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
       maxOutputTokens: isHostedDeployment
         ? PUBLIC_MAX_OUTPUT_TOKENS
