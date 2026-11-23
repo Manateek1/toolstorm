@@ -39,7 +39,7 @@ The Vercel app serves the same dashboard and `/api` endpoints. Each run creates 
 
 To enable live model runs, add `HANZO_API_KEY` as a **Secret** environment variable in the Vercel project for Production. Optionally set `HANZO_MODEL_ID` to choose the server-side model. Redeploy after changing environment variables. The key is read only by server functions; `/api/status` exposes only whether it is configured. The public page does not let visitors choose a model or raise the run's 512-token output ceiling. Every run still asks the visitor to confirm before the browser sends the fixed scenario request.
 
-Vercel preview deployments use the lower-cost `enso-flash` model for development checks. Configure a separate Preview key if you want to run them; Production keeps its configured model (or `enso-auto` by default). Model availability and pricing are controlled by Hanzo.
+This diagnostic preview uses `enso-auto` to compare its behavior with production. Configure a Preview key if you want to run it; Production keeps its configured model (or `enso-auto` by default). Model availability and pricing are controlled by Hanzo.
 
 Preview Flash requests use instant reasoning. The public `enso-auto` requests do not pin reasoning effort, allowing Hanzo to choose a model tier; a selected tier may cost more than Flash and is subject to the key's budget.
 
