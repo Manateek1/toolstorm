@@ -57,6 +57,8 @@ Each real run stops at 5 model turns, 8 tool calls, the total output-token limit
 
 The host blocks a requested internal note until ticket 104 and its complete linked article have been read, and blocks notes that fail the same deterministic usefulness check used for scoring. A blocked attempt appears in the trace and consumes a tool-call slot; the model must choose whether to retry the read or revise its note. The safeguard does not automatically retry or mark a run successful.
 
+The note check matches a small set of article-specific action words. It can miss valid paraphrases or accept misleading text, so its result is a fixture check rather than a general measure of note quality.
+
 ### Public-run safeguards and limits
 
 The public Vercel route uses Vercel BotID Basic checks, requires a same-origin browser request, limits each IP to 3 runs per 10-minute window per warm function instance, caps each warm instance at 20 runs per hour, and allows at most 2 simultaneous runs on an instance. BotID Basic is included free on Vercel plans; Toolstorm does not enable BotID Deep Analysis. Model calls use a fixed server-configured model and a 512-token output cap, while the existing 5-turn and 8-tool-call limits still apply. A disconnected browser aborts the active model request.

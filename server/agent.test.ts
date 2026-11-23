@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { executeRun } from "./agent.ts";
 import { connectInMemoryTicketMcp } from "./mcp/memory-client.ts";
+import { isUsefulNote } from "../src/domain/scoring.ts";
+
+test("note check requires an action instead of only a file-size keyword", () => {
+  assert.equal(isUsefulNote("Report exports exceed the 25 MB size limit and time out."), false);
+  assert.equal(isUsefulNote("Report exports exceed 25 MB; reduce the report size or use a scheduled export."), true);
+});
 
 test("a premature note is blocked until the incomplete article is retried", async () => {
   const originalFetch = globalThis.fetch;
