@@ -36,3 +36,30 @@ test("a premature note is blocked until the incomplete article is retried", asyn
     else process.env.HANZO_API_KEY = originalKey;
   }
 });
+
+test("a run cannot pass when the model stops after a blocked note", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.HANZO_API_KEY;
+  process.env.HANZO_API_KEY = "test-key";
+  const turns = [
+    ["get_ticket", { ticket_id: 104 }],
+    ["search_help_articles", { query: "ha-4821" }],
+    ["add_internal_note", { ticket_id: 104, note: "Report exports timeout; reduce size or schedule export." }],
+  ] as const;
+  let turn = 0;
+  globalThis.fetch = async () => {
+    const next = turns[turn++];
+    const message = next ? { content: null, tool_calls: [{ id: `call-${turn}`, type: "function", function: { name: next[0], arguments: JSON.stringify(next[1]) } }] } : { content: "Done." };
+    return Response.json({ choices: [{ message }], usage: { completion_tokens: 10 } });
+  };
+  try {
+    const result = await executeRun({ mode: "hanzo", fault: "malformed_data", model: "test", maxOutputTokens: 512, confirmed: true }, undefined, connectInMemoryTicketMcp);
+    assert.equal(result.after.internalNotes.length, 0);
+    assert.notEqual(result.result, "passed");
+    assert.equal(result.checks.find((check) => check.id === "completed_after_fault")?.state, "failed");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.HANZO_API_KEY;
+    else process.env.HANZO_API_KEY = originalKey;
+  }
+});
