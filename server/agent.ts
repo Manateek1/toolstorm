@@ -467,7 +467,12 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
             messages.push({
               role: "tool",
               tool_call_id: toolCall.id,
-              content: toDisplay({ isError: parsed.isError, malformed, result: toolText }, 5000),
+              content: toDisplay({
+                isError: parsed.isError,
+                malformed,
+                validation: malformed ? "Incomplete article: required summary or URL is missing. Do not rely on this result." : undefined,
+                result: toolText,
+              }, 5000),
             });
           } catch {
             makeEvent(trace, "tool", "error", toolName, "Local MCP tool call failed before a result was returned.", {
