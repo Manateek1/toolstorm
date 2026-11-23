@@ -12,6 +12,10 @@ const HANZO_ENDPOINT = "https://api.hanzo.ai/v1/chat/completions";
 function safeNetworkFailureLabel(error: unknown): string {
   if (!(error instanceof Error)) return "UnknownError";
 
+  // Never include raw exception messages: header errors can contain credentials.
+  if (/invalid character|invalid header|headers\.append|headers\.set/i.test(error.message)) return "Invalid request header";
+  if (/fetch failed/i.test(error.message)) return "Network fetch failed";
+
   const cause = error.cause;
   const causeCode =
     cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string"
@@ -291,6 +295,10 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
   if (!apiKey) {
     await connection.close();
     throw new Error("HANZO_API_KEY is not set in the local server environment.");
+  }
+  if (!/^[\x21-\x7e]+$/.test(apiKey)) {
+    await connection.close();
+    throw new Error("HANZO_API_KEY contains whitespace or invalid characters. Update the server environment variable with the key only.");
   }
   if (!request.confirmed) {
     await connection.close();
