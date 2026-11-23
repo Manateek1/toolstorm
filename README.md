@@ -41,7 +41,7 @@ To enable live model runs, add `HANZO_API_KEY` as a **Secret** environment varia
 
 Vercel preview deployments use the lower-cost `enso-flash` model for development checks. Configure a separate Preview key if you want to run them; Production keeps its configured model (or `enso-auto` by default). Model availability and pricing are controlled by Hanzo.
 
-Preview Flash requests use instant reasoning. The public `enso-auto` requests do not pin reasoning effort, allowing Hanzo to choose a model tier; a selected tier may cost more than Flash and is subject to the key's budget.
+This diagnostic preview uses low reasoning for Flash. The public `enso-auto` requests do not pin reasoning effort, allowing Hanzo to choose a model tier; a selected tier may cost more than Flash and is subject to the key's budget.
 
 The GitHub Pages workflow alone sets the scripted-preview flag, so its trace cannot be mistaken for a Vercel run. Vercel Hobby hosting has plan limits; see [Vercel pricing](https://vercel.com/pricing).
 

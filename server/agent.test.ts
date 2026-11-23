@@ -9,7 +9,7 @@ test("note check requires an action instead of only a file-size keyword", () => 
   assert.equal(isUsefulNote("Report exports exceed 25 MB; reduce the report size or use a scheduled export."), true);
 });
 
-test("public auto routing is not pinned to Flash; preview Flash uses instant effort", async () => {
+test("public auto routing is not pinned to Flash; diagnostic Flash uses low effort", async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.HANZO_API_KEY;
   process.env.HANZO_API_KEY = "test-key";
@@ -23,7 +23,7 @@ test("public auto routing is not pinned to Flash; preview Flash uses instant eff
       await executeRun({ mode: "hanzo", fault: "temporary_error", model, maxOutputTokens: 512, confirmed: true }, undefined, connectInMemoryTicketMcp);
     }
     assert.equal("reasoning_effort" in requests[0], false);
-    assert.equal(requests[1].reasoning_effort, "instant");
+    assert.equal(requests[1].reasoning_effort, "low");
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.HANZO_API_KEY;
