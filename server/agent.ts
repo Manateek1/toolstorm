@@ -9,6 +9,20 @@ const MAX_MODEL_TURNS = 5;
 const MAX_TOOL_CALLS = 8;
 const HANZO_ENDPOINT = "https://api.hanzo.ai/v1/chat/completions";
 
+function safeNetworkFailureLabel(error: unknown): string {
+  if (!(error instanceof Error)) return "UnknownError";
+
+  const cause = error.cause;
+  const causeCode =
+    cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string"
+      ? cause.code
+      : undefined;
+  const safeName = /^[A-Za-z][A-Za-z0-9]{0,47}$/.test(error.name) ? error.name : "Error";
+  const safeCode = causeCode && /^[A-Za-z0-9_.-]{1,48}$/.test(causeCode) ? causeCode : undefined;
+
+  return safeCode ? `${safeName} · ${safeCode}` : safeName;
+}
+
 interface ChatToolCall {
   id: string;
   type: "function";
@@ -337,8 +351,16 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
             }),
             signal,
           });
-        } catch {
-          makeEvent(trace, "agent", "error", `Hanzo model turn ${turn} failed`, "Could not reach the Hanzo chat-completions endpoint.");
+        } catch (error) {
+          const failure = safeNetworkFailureLabel(error);
+          console.error("Hanzo chat-completions request could not connect", { failure });
+          makeEvent(
+            trace,
+            "agent",
+            "error",
+            `Hanzo model turn ${turn} failed`,
+            `Could not reach the Hanzo chat-completions endpoint (${failure}).`,
+          );
           break;
         }
 
