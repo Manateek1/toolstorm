@@ -546,6 +546,7 @@ function App() {
                 <aside className="panel scenario-panel" aria-labelledby="scenario-heading">
                   <div className="panel-heading"><span className="panel-icon"><Braces aria-hidden="true" /></span><div><h2 id="scenario-heading">Scenario configuration</h2><p>Ticket 104 triage · fictional support system</p></div></div>
                   <div className="task-summary"><span className="task-label">FIXED TASK</span><p>{TASK_TEXT}</p><div className="task-metadata"><span><FileText aria-hidden="true" /> Ticket #104</span><span><Database aria-hidden="true" /> Synthetic fixture</span></div></div>
+                  {!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") && <p className="section-help">A host safeguard blocks notes until the ticket and complete article are read, and blocks notes without a concrete troubleshooting action. Blocked attempts appear in the trace.</p>}
 
                   <fieldset className="control-section fault-section">
                     <legend><Sparkles aria-hidden="true" /> Inject a fault</legend>
