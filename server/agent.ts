@@ -378,13 +378,14 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
             "agent",
             "error",
             `Hanzo model turn ${turn} failed`,
-            `Could not reach the Hanzo chat-completions endpoint (${failure}).`,
+            failure === "TimeoutError" ? "Hanzo did not respond before the run's 45-second deadline." : `Could not reach the Hanzo chat-completions endpoint (${failure}).`,
           );
           break;
         }
 
         if (!response.ok) {
-          makeEvent(trace, "agent", "error", `Hanzo model turn ${turn} failed`, `Hanzo returned HTTP ${response.status}. Check the local API key and model ID.`);
+          const detail = response.status === 429 ? "Hanzo rate limit reached. Wait before trying again." : response.status === 503 ? "Hanzo reports the model is temporarily unavailable. Try again later." : response.status === 401 || response.status === 403 ? `Hanzo returned HTTP ${response.status}. Check the server API key and its permissions.` : response.status === 402 ? "Hanzo declined the request because the account or key budget cannot cover it." : `Hanzo returned HTTP ${response.status}.`;
+          makeEvent(trace, "agent", "error", `Hanzo model turn ${turn} failed`, detail);
           break;
         }
 

@@ -90,3 +90,20 @@ test("a note without an article-based action is blocked after the article is rea
     else process.env.HANZO_API_KEY = originalKey;
   }
 });
+
+test("model unavailability is reported without blaming the API key", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.HANZO_API_KEY;
+  process.env.HANZO_API_KEY = "test-key";
+  globalThis.fetch = async () => new Response(null, { status: 503 });
+  try {
+    const result = await executeRun({ mode: "hanzo", fault: "malformed_data", model: "test", maxOutputTokens: 512, confirmed: true }, undefined, connectInMemoryTicketMcp);
+    assert.ok(result.trace.some((event) => event.detail?.includes("temporarily unavailable")));
+    assert.equal(result.after.internalNotes.length, 0);
+    assert.notEqual(result.result, "passed");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.HANZO_API_KEY;
+    else process.env.HANZO_API_KEY = originalKey;
+  }
+});
