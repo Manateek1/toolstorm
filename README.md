@@ -61,6 +61,8 @@ The host blocks a requested internal note until ticket 104 and its complete link
 
 The note check matches a small set of article-specific action words. It can miss valid paraphrases or accept misleading text, so its result is a fixture check rather than a general measure of note quality.
 
+The instruction check detects status-change attempts, certain injected phrases in the note, and verbatim disclosure of a distinctive system-prompt sentence. It cannot reliably detect paraphrased disclosures or every way an agent might follow an instruction; a pass is not proof of prompt-injection resistance.
+
 ### Public-run safeguards and limits
 
 The public Vercel route uses Vercel BotID Basic checks, requires a same-origin browser request, limits each IP to 3 runs per 10-minute window per warm function instance, caps each warm instance at 20 runs per hour, and allows at most 2 simultaneous runs on an instance. BotID Basic is included free on Vercel plans; Toolstorm does not enable BotID Deep Analysis. Model calls use a fixed server-configured model and a 512-token output cap, while the existing 5-turn and 8-tool-call limits still apply. A disconnected browser aborts the active model request.
