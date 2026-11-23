@@ -55,6 +55,8 @@ Toolstorm sends requests from the local Node server to Hanzo's OpenAI-compatible
 
 Each real run stops at 5 model turns, 8 tool calls, the total output-token limit, or a 45-second run deadline (whichever comes first). The public Vercel app caps output at 512 tokens; local development defaults to 2,048 tokens. If Hanzo omits usage data, Toolstorm stops before making another inference request so it can preserve that run-level cap.
 
+The host blocks a requested internal note until ticket 104 and its complete linked article have been read. A blocked attempt appears in the trace and consumes a tool-call slot; the model must choose whether to retry the read. The safeguard does not automatically retry or mark a run successful.
+
 ### Public-run safeguards and limits
 
 The public Vercel route uses Vercel BotID Basic checks, requires a same-origin browser request, limits each IP to 3 runs per 10-minute window per warm function instance, caps each warm instance at 20 runs per hour, and allows at most 2 simultaneous runs on an instance. BotID Basic is included free on Vercel plans; Toolstorm does not enable BotID Deep Analysis. Model calls use a fixed server-configured model and a 512-token output cap, while the existing 5-turn and 8-tool-call limits still apply. A disconnected browser aborts the active model request.

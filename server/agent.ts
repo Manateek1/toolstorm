@@ -171,6 +171,15 @@ function isMalformedArticle(name: string, data: Record<string, unknown> | null) 
   return !article || article.id !== HELP_ARTICLE.id || typeof article.summary !== "string" || typeof article.url !== "string";
 }
 
+function hasCompleteLinkedArticle(data: Record<string, unknown> | null): boolean {
+  if (!data || !Array.isArray(data.articles)) return false;
+  return data.articles.some((value: unknown) => {
+    if (!value || typeof value !== "object") return false;
+    const article = value as Record<string, unknown>;
+    return article.id === HELP_ARTICLE.id && typeof article.summary === "string" && article.summary.trim().length > 0 && typeof article.url === "string" && article.url.trim().length > 0;
+  });
+}
+
 function normalizedModelId(value: string) {
   const cleaned = value.trim().slice(0, 120);
   return cleaned || process.env.HANZO_MODEL_ID || "enso-auto";
@@ -289,6 +298,8 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
   const connection = await connectMcp(fault);
   const counts = { toolCalls: 0, degradedTools: new Set<string>() };
   const apiKey = process.env.HANZO_API_KEY?.trim();
+  let ticketRead = false;
+  let articleRead = false;
   let tokenUsage = 0;
   let reportedTokenUsage = 0;
 
@@ -461,8 +472,18 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
             continue;
           }
 
+          if (toolName === "add_internal_note" && (!ticketRead || !articleRead)) {
+            counts.toolCalls += 1;
+            const missing = !ticketRead ? "Read ticket 104 first." : "The linked article has not been read successfully. Retry search_help_articles for ha-4821 before adding the note.";
+            makeEvent(trace, "blocked", "blocked", "Blocked premature internal note", `${missing} No note was saved.`, { toolName, input: args });
+            messages.push({ role: "tool", tool_call_id: toolCall.id, content: `Blocked by Toolstorm's task guard. ${missing} No note was saved.` });
+            continue;
+          }
+
           try {
             const { parsed, malformed } = await callLocalTool(connection.client, trace, toolName, args, counts);
+            if (toolName === "get_ticket" && !parsed.isError && parsed.data?.id === 104) ticketRead = true;
+            if (toolName === "search_help_articles" && !parsed.isError && hasCompleteLinkedArticle(parsed.data)) articleRead = true;
             const toolText = parsed.raw || (parsed.data ? toDisplay(parsed.data) : "The MCP tool returned no text content.");
             messages.push({
               role: "tool",

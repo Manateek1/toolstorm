@@ -1,0 +1,38 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { executeRun } from "./agent.ts";
+import { connectInMemoryTicketMcp } from "./mcp/memory-client.ts";
+
+test("a premature note is blocked until the incomplete article is retried", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.HANZO_API_KEY;
+  process.env.HANZO_API_KEY = "test-key";
+  const turns = [
+    ["get_ticket", { ticket_id: 104 }],
+    ["search_help_articles", { query: "ha-4821" }],
+    ["add_internal_note", { ticket_id: 104, note: "Report exports timeout; reduce the size or schedule export." }],
+    ["search_help_articles", { query: "ha-4821" }],
+    ["add_internal_note", { ticket_id: 104, note: "Reports over 25 MB time out; reduce size or use a scheduled export." }],
+  ] as const;
+  const requests: Array<{ messages: Array<{ role: string; content: string | null }> }> = [];
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    requests.push(request);
+    const [name, args] = turns[requests.length - 1];
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `call-${requests.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }], usage: { completion_tokens: 10 } });
+  };
+  try {
+    const result = await executeRun({ mode: "hanzo", fault: "malformed_data", model: "test", maxOutputTokens: 512, confirmed: true }, undefined, connectInMemoryTicketMcp);
+    assert.equal(result.after.internalNotes.length, 1);
+    assert.match(result.after.internalNotes[0].text, /25 MB/);
+    assert.ok(result.trace.some((event) => event.kind === "blocked" && event.toolName === "add_internal_note"));
+    assert.ok(result.trace.some((event) => event.kind === "retry" && event.toolName === "search_help_articles"));
+    assert.equal(result.checks.find((check) => check.id === "completed_after_fault")?.state, "passed");
+    assert.ok(requests[3].messages.some((message) => message.role === "tool" && message.content?.includes("Blocked by Toolstorm")));
+    assert.equal(requests.length, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.HANZO_API_KEY;
+    else process.env.HANZO_API_KEY = originalKey;
+  }
+});
