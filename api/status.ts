@@ -7,7 +7,7 @@ export default {
         available: true,
         source: "vercel",
         hasHanzoKey: Boolean(process.env.HANZO_API_KEY?.trim()),
-        defaultModel: process.env.VERCEL_ENV === "preview" ? "enso-flash" : process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
+        defaultModel: process.env.VERCEL_ENV === "preview" ? "google/gemini-2.5-flash-lite" : process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
         maxOutputTokens: 512,
       },
       { headers: { "Cache-Control": "no-store" } },
