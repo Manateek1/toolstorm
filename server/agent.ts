@@ -366,7 +366,9 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
               max_completion_tokens: remainingTokens,
               store: false,
               stream: false,
-              reasoning_effort: "instant",
+              // On enso-auto, "instant" forces Flash rather than allowing the
+              // router to choose a suitable tier. Only pin effort for Flash.
+              ...(model === "enso-flash" ? { reasoning_effort: "instant" } : {}),
             }),
             signal,
           });
