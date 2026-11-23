@@ -78,6 +78,8 @@ BotID checks are performed by Vercel for automated-traffic screening. Toolstorm 
 
 The checker evaluates the simulation state and trace. It does not ask an LLM to judge the run. Run history and settings are not sent to a server. A confirmed Hanzo run is the sole exception for the task prompt and simulated tool results described above.
 
+Run `npm test` for the local recovery and scoring regression checks. These use the synthetic MCP server and a mocked model, so they do not use Hanzo credits and do not replace live-model checks.
+
 ## Public hosting
 
 The source repository publishes the scripted walkthrough to [GitHub Pages](https://manateek1.github.io/toolstorm/) from `main` with [`.github/workflows/pages.yml`](.github/workflows/pages.yml). That bundle runs the scripted trace in the visitor's browser and contains no Hanzo key or model endpoint. The Vercel app runs the server-side MCP simulation. If `HANZO_API_KEY` is configured, confirmed Hanzo requests use the server environment and never expose the key to the browser.
