@@ -2,7 +2,9 @@ import { HELP_ARTICLE, UNTRUSTED_TEXT } from "./fixture.ts";
 import type { FaultKind, OutcomeCheck, TicketState, TraceEvent } from "./types";
 
 const useContext = /export|report|file|upload|timeout/i;
-const offerAction = /25\s?mb|size|reduce|narrow|scheduled|columns/i;
+// A size or limit on its own describes the problem; require an action the
+// linked article actually suggests rather than rewarding a bare keyword.
+const offerAction = /\b(?:reduc(?:e|es|ed|ing)|narrow(?:s|ed|ing)?|remov(?:e|es|ed|ing)|schedul(?:e|es|ed|ing))\b/i;
 
 export function isUsefulNote(note: string): boolean {
   return note.trim().length >= 42 && useContext.test(note) && offerAction.test(note);
