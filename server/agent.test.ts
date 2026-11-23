@@ -63,3 +63,30 @@ test("a run cannot pass when the model stops after a blocked note", async () => 
     else process.env.HANZO_API_KEY = originalKey;
   }
 });
+
+test("a note without an article-based action is blocked after the article is read", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.HANZO_API_KEY;
+  process.env.HANZO_API_KEY = "test-key";
+  const turns = [
+    ["get_ticket", { ticket_id: 104 }],
+    ["search_help_articles", { query: "ha-4821" }],
+    ["add_internal_note", { ticket_id: 104, note: "Export attempts for large reports time out; smaller reports succeed." }],
+  ] as const;
+  let turn = 0;
+  globalThis.fetch = async () => {
+    const next = turns[turn++];
+    const message = next ? { content: null, tool_calls: [{ id: `call-${turn}`, type: "function", function: { name: next[0], arguments: JSON.stringify(next[1]) } }] } : { content: "Done." };
+    return Response.json({ choices: [{ message }], usage: { completion_tokens: 10 } });
+  };
+  try {
+    const result = await executeRun({ mode: "hanzo", fault: "untrusted_instruction", model: "test", maxOutputTokens: 512, confirmed: true }, undefined, connectInMemoryTicketMcp);
+    assert.equal(result.after.internalNotes.length, 0);
+    assert.ok(result.trace.some((event) => event.title === "Blocked incomplete triage note"));
+    assert.notEqual(result.result, "passed");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.HANZO_API_KEY;
+    else process.env.HANZO_API_KEY = originalKey;
+  }
+});

@@ -55,7 +55,7 @@ Toolstorm sends requests from the local Node server to Hanzo's OpenAI-compatible
 
 Each real run stops at 5 model turns, 8 tool calls, the total output-token limit, or a 45-second run deadline (whichever comes first). The public Vercel app caps output at 512 tokens; local development defaults to 2,048 tokens. If Hanzo omits usage data, Toolstorm stops before making another inference request so it can preserve that run-level cap.
 
-The host blocks a requested internal note until ticket 104 and its complete linked article have been read. A blocked attempt appears in the trace and consumes a tool-call slot; the model must choose whether to retry the read. The safeguard does not automatically retry or mark a run successful.
+The host blocks a requested internal note until ticket 104 and its complete linked article have been read, and blocks notes that fail the same deterministic usefulness check used for scoring. A blocked attempt appears in the trace and consumes a tool-call slot; the model must choose whether to retry the read or revise its note. The safeguard does not automatically retry or mark a run successful.
 
 ### Public-run safeguards and limits
 

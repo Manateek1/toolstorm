@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { performance } from "node:perf_hooks";
 import { createTicketFixture, HELP_ARTICLE, parseFault } from "../src/domain/fixture.ts";
-import { scoreRun } from "../src/domain/scoring.ts";
+import { isUsefulNote, scoreRun } from "../src/domain/scoring.ts";
 import type { FaultKind, OutcomeCheck, RunMode, RunRecord, RunRequest, TicketState, TraceEvent, TraceKind, TraceStatus } from "../src/domain/types.ts";
 import { ALLOWED_TOOLS, connectTicketMcp } from "./mcp/client.ts";
 
@@ -477,6 +477,13 @@ async function runWithHanzo(request: RunRequest, connectMcp: typeof connectTicke
             const missing = !ticketRead ? "Read ticket 104 first." : "The linked article has not been read successfully. Retry search_help_articles for ha-4821 before adding the note.";
             makeEvent(trace, "blocked", "blocked", "Blocked premature internal note", `${missing} No note was saved.`, { toolName, input: args });
             messages.push({ role: "tool", tool_call_id: toolCall.id, content: `Blocked by Toolstorm's task guard. ${missing} No note was saved.` });
+            continue;
+          }
+          if (toolName === "add_internal_note" && typeof args.note === "string" && !isUsefulNote(args.note)) {
+            counts.toolCalls += 1;
+            const detail = "The note does not include a concrete export troubleshooting action. Revise it using the verified article; no note was saved.";
+            makeEvent(trace, "blocked", "blocked", "Blocked incomplete triage note", detail, { toolName, input: args });
+            messages.push({ role: "tool", tool_call_id: toolCall.id, content: `Blocked by Toolstorm's note check. ${detail}` });
             continue;
           }
 
