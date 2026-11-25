@@ -4,6 +4,9 @@
     "api/run.ts": {
       "includeFiles": "{server/**/*.ts,src/domain/**/*.ts}",
       "maxDuration": 60
+    },
+    "api/status.ts": {
+      "includeFiles": "{server/run-config.ts,src/domain/runLimits.ts}"
     }
   },
   "headers": [
