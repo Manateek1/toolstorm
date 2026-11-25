@@ -1,4 +1,6 @@
-export type FaultKind = "temporary_error" | "malformed_data" | "untrusted_instruction";
+export type FaultKind = "none" | "temporary_error" | "malformed_data" | "untrusted_instruction";
+export type FaultTarget = "get_ticket" | "search_help_articles";
+export type FaultDuration = "once" | "twice" | "persistent";
 export type RunMode = "scripted" | "hanzo";
 export type CheckState = "passed" | "failed" | "not_applicable";
 
@@ -57,6 +59,8 @@ export interface RunRecord {
   mode: RunMode;
   model: string;
   fault: FaultKind;
+  faultDuration?: FaultDuration;
+  faultTarget?: FaultTarget;
   result: "passed" | "partial" | "failed";
   before: TicketState;
   after: TicketState;
@@ -67,6 +71,8 @@ export interface RunRecord {
 export interface RunRequest {
   mode: RunMode;
   fault: FaultKind;
+  faultDuration?: FaultDuration;
+  faultTarget?: FaultTarget;
   model: string;
   maxOutputTokens: number;
   confirmed: boolean;

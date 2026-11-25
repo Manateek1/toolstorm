@@ -1,10 +1,10 @@
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import type { FaultKind } from "../../src/domain/types.ts";
+import type { FaultDuration, FaultKind, FaultTarget } from "../../src/domain/types.ts";
 import { createTicketServer } from "./ticket-server.ts";
 
-export async function connectInMemoryTicketMcp(fault: FaultKind) {
+export async function connectInMemoryTicketMcp(fault: FaultKind, duration: FaultDuration = "once", target: FaultTarget = "search_help_articles") {
   const client = new Client({ name: "toolstorm-agent-host", version: "1.0.0" });
-  const server = createTicketServer(fault);
+  const server = createTicketServer(fault, duration, target);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   try {
