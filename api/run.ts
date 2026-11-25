@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { checkBotId } from "botid/server";
+import { configuredHanzoModel } from "../server/run-config.ts";
+import { PUBLIC_MAX_OUTPUT_TOKENS } from "../src/domain/runLimits.ts";
 import { executeRun } from "../server/agent.ts";
 import { connectInMemoryTicketMcp } from "../server/mcp/memory-client.ts";
-import { parseFault } from "../src/domain/fixture.ts";
+import { parseFault, parseFaultDuration, parseFaultTarget } from "../src/domain/fixture.ts";
 import type { RunMode, RunRequest, TraceEvent } from "../src/domain/types.ts";
 
 export const runtime = "nodejs";
@@ -13,7 +15,6 @@ const streamHeaders = {
   "X-Content-Type-Options": "nosniff",
 };
 
-const PUBLIC_MAX_OUTPUT_TOKENS = 512;
 const RUN_WINDOW_MS = 10 * 60 * 1000;
 const INSTANCE_RUN_WINDOW_MS = 60 * 60 * 1000;
 const MAX_RUNS_PER_IP_PER_WINDOW = 3;
@@ -219,12 +220,15 @@ export default {
     const configuredTokens = typeof payload.maxOutputTokens === "number" && Number.isFinite(payload.maxOutputTokens)
       ? Math.floor(payload.maxOutputTokens)
       : 2048;
+    const fault = parseFault(payload.fault);
     const runRequest: RunRequest = {
       mode,
-      fault: parseFault(payload.fault),
+      fault,
+      faultDuration: parseFaultDuration(fault, payload.faultDuration),
+      faultTarget: parseFaultTarget(fault, payload.faultTarget),
       model: isHostedDeployment
-        ? process.env.VERCEL_ENV === "preview" ? "enso-flash" : process.env.HANZO_MODEL_ID?.trim() || "enso-auto"
-        : typeof payload.model === "string" ? payload.model.trim().slice(0, 120) : process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
+        ? configuredHanzoModel()
+        : typeof payload.model === "string" ? payload.model.trim().slice(0, 120) : configuredHanzoModel(),
       maxOutputTokens: isHostedDeployment
         ? PUBLIC_MAX_OUTPUT_TOKENS
         : Math.max(256, Math.min(8192, configuredTokens)),

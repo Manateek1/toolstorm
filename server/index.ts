@@ -1,7 +1,8 @@
 import dotenv from "dotenv";
 import express, { type Request, type Response, type NextFunction } from "express";
+import { configuredHanzoModel } from "./run-config.ts";
 import { executeRun } from "./agent.ts";
-import { parseFault } from "../src/domain/fixture.ts";
+import { parseFault, parseFaultDuration, parseFaultTarget } from "../src/domain/fixture.ts";
 import type { RunMode, RunRequest } from "../src/domain/types.ts";
 
 dotenv.config({ path: ".env.local" });
@@ -29,7 +30,7 @@ app.get("/api/status", (_req, res) => {
     available: true,
     source: "local",
     hasHanzoKey: Boolean(process.env.HANZO_API_KEY?.trim()),
-    defaultModel: process.env.HANZO_MODEL_ID?.trim() || "enso-auto",
+    defaultModel: configuredHanzoModel(),
   });
 });
 
@@ -43,10 +44,13 @@ app.post("/api/run", async (req, res) => {
     return res.status(503).json({ error: "HANZO_API_KEY is not set. Scripted MCP demo mode is available without a key." });
   }
 
+  const fault = parseFault(value?.fault);
   const request: RunRequest = {
     mode,
-    fault: parseFault(value?.fault),
-    model: typeof value?.model === "string" ? value.model.slice(0, 120) : "enso-auto",
+    fault,
+    faultDuration: parseFaultDuration(fault, value?.faultDuration),
+    faultTarget: parseFaultTarget(fault, value?.faultTarget),
+    model: typeof value?.model === "string" ? value.model.slice(0, 120) : configuredHanzoModel(),
     maxOutputTokens: typeof value?.maxOutputTokens === "number" ? value.maxOutputTokens : 2048,
     confirmed: value?.confirmed === true,
   };

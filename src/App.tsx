@@ -1,45 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Activity,
-  AlertTriangle,
-  ArrowDownToLine,
-  ArrowRight,
-  ArrowUpRight,
-  Bot,
-  Braces,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  CircleHelp,
-  CirclePlay,
-  CircleX,
-  Clock3,
-  Database,
-  FileText,
-  Layers,
-  LockKeyhole,
-  Play,
-  RotateCcw,
-  Search,
-  Shield,
-  ShieldCheck,
-  Sparkles,
-  Trash2,
-  Wrench,
-  X,
+  Activity, AlertTriangle, ArrowDownToLine, ArrowRight, ArrowUpRight, Bot,
+  CheckCircle2, ChevronDown, CircleHelp, CirclePlay, CircleX, Clock3,
+  Database, Layers, Play, RotateCcw, Search, Shield, ShieldCheck, Terminal,
+  Trash2, Wrench, X, Zap,
 } from "lucide-react";
-import { FAULTS, createTicketFixture, TASK_TEXT } from "./domain/fixture";
+import { Landing } from "./Landing";
+import { createTicketFixture, FAULTS, hasConfigurableDuration, parseFaultDuration, parseFaultTarget, TASK_TEXT } from "./domain/fixture";
+import { DEFAULT_HANZO_MODEL, MAX_MODEL_TURNS, MAX_TOOL_CALLS, PUBLIC_MAX_OUTPUT_TOKENS } from "./domain/runLimits";
 import { runScriptedScenario } from "./domain/scriptedRun";
-import type { FaultKind, OutcomeCheck, RunMode, RunRecord, TraceEvent, TicketState } from "./domain/types";
+import type { FaultDuration, FaultKind, FaultTarget, OutcomeCheck, RunMode, RunRecord, TraceEvent, TicketState } from "./domain/types";
 import { clearRunHistory, exportRun, readRunHistory, saveRunHistory } from "./lib/history";
 
 const PUBLIC_SCRIPTED_PREVIEW = import.meta.env.VITE_PUBLIC_SCRIPTED_PREVIEW === "true";
 const HANZO_ONLY_BUILD = import.meta.env.PROD && !PUBLIC_SCRIPTED_PREVIEW;
 const INITIAL_FAULT: FaultKind = "temporary_error";
+const DURATIONS: Record<FaultDuration, string> = {
+  once: "First attempt",
+  twice: "First two attempts",
+  persistent: "Every attempt",
+};
+const TICKET = createTicketFixture();
+const SOURCE_URL = "https://github.com/Manateek1/toolstorm";
 
-type AppView = "lab" | "history" | "tools" | "safety";
+type AppView = "home" | "lab" | "history" | "tools" | "safety";
 type ResultFilter = "all" | RunRecord["result"];
+type TraceFilter = "all" | "tools" | "faults";
+
+function currentView(): AppView {
+  switch (window.location.hash) {
+    case "#lab":
+    case "#sample": return "lab";
+    case "#history": return "history";
+    case "#tools": return "tools";
+    case "#safety": return "safety";
+    default: return "home";
+  }
+}
 
 interface LocalStatus {
   available: boolean;
@@ -102,34 +99,19 @@ function errorMessage(value: unknown, fallback: string) {
   return value === undefined ? fallback : stringify(value) || fallback;
 }
 
-function ToolstormMark() {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
-      <path d="m16 3.5 11 6.3v12.4L16 28.5 5 22.2V9.8l11-6.3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="m5.5 10.1 10.5 6.1 10.5-6.1M16 16.2v11.7" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="m10.5 7 10.8 6.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity=".72" />
-    </svg>
-  );
-}
-
 function dateTimeLabel(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Unknown date" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-function timeLabel(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Unknown time" : new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
-}
-
 function faultTitle(fault: FaultKind) {
-  return FAULTS.find((item) => item.id === fault)?.title ?? "Temporary error";
+  return FAULTS.find((item) => item.id === fault)?.title ?? "Connection error";
 }
 
-function outcomeText(result: RunRecord["result"]) {
-  if (result === "passed") return "All checks passed";
-  if (result === "partial") return "Some checks need attention";
-  return "Run did not complete safely";
+function scenarioTitle(run: RunRecord) {
+  if (!hasConfigurableDuration(run.fault)) return faultTitle(run.fault);
+  const target = run.faultTarget === "get_ticket" ? "Ticket" : "Article";
+  return `${faultTitle(run.fault)} · ${target.toLowerCase()} · ${DURATIONS[parseFaultDuration(run.fault, run.faultDuration)].toLowerCase()}`;
 }
 
 function FaultIcon({ state }: { state: OutcomeCheck["state"] }) {
@@ -160,41 +142,30 @@ function TraceIcon({ kind, mode }: { kind: TraceEvent["kind"]; mode: RunMode }) 
   return <Activity aria-hidden="true" />;
 }
 
-function traceActor(kind: TraceEvent["kind"], mode: RunMode) {
-  if (kind === "agent") return mode === "hanzo" ? "Agent" : "Script";
-  if (kind === "tool") return "MCP tool";
-  if (kind === "retry") return "Retry";
-  if (kind === "fault") return "Injected fault";
-  if (kind === "blocked") return "Guard";
-  return "System";
-}
-
 function TraceRow({ event, mode }: { event: TraceEvent; mode: RunMode }) {
   const hasPayload = event.input !== undefined || event.output !== undefined;
+  const row = (
+    <>
+      <span className="trace-sequence">{String(event.sequence).padStart(2, "0")}</span>
+      <span className="trace-icon"><TraceIcon kind={event.kind} mode={mode} /></span>
+      <span className="trace-body">
+        <strong>{event.title}</strong>
+        {event.detail && <span className="trace-detail">{event.detail}</span>}
+      </span>
+      <StatusLabel status={event.status} kind={event.kind} />
+      {hasPayload && <ChevronDown className="trace-chevron" aria-hidden="true" />}
+    </>
+  );
 
+  if (!hasPayload) return <div className="trace-row"><div className="trace-summary">{row}</div></div>;
   return (
-    <details className={`trace-row trace-row--${event.status}`}>
-      <summary className="trace-summary">
-        <span className="trace-sequence">{String(event.sequence).padStart(2, "0")}</span>
-        <span className="trace-icon"><TraceIcon kind={event.kind} mode={mode} /></span>
-        <span className="trace-body">
-          <span className="trace-heading">
-            <span className="trace-actor">{traceActor(event.kind, mode)}</span>
-            <strong>{event.title}</strong>
-          </span>
-          {event.detail && <span className="trace-detail">{event.detail}</span>}
-        </span>
-        <StatusLabel status={event.status} kind={event.kind} />
-        <ChevronDown className="trace-chevron" aria-hidden="true" />
-      </summary>
-      {hasPayload && (
-        <div className="trace-payload">
-          {event.toolName && <span className="payload-tool">{event.toolName}</span>}
-          {event.durationMs !== undefined && <span className="payload-time">{event.durationMs} ms</span>}
-          {event.input !== undefined && <div className="payload-block"><span>Input</span><pre>{stringify(event.input)}</pre></div>}
-          {event.output !== undefined && <div className="payload-block"><span>Result</span><pre>{stringify(event.output)}</pre></div>}
-        </div>
-      )}
+    <details className="trace-row">
+      <summary className="trace-summary">{row}</summary>
+      <div className="trace-payload">
+        {event.durationMs !== undefined && <span className="payload-time">{event.durationMs} ms</span>}
+        {event.input !== undefined && <div className="payload-block"><span>Input</span><pre>{stringify(event.input)}</pre></div>}
+        {event.output !== undefined && <div className="payload-block"><span>Result</span><pre>{stringify(event.output)}</pre></div>}
+      </div>
     </details>
   );
 }
@@ -233,19 +204,18 @@ function CheckRow({ check }: { check: OutcomeCheck }) {
   );
 }
 
-function ToolCatalogTable({ compact = false }: { compact?: boolean }) {
+function ToolCatalogTable() {
   return (
     <div className="table-scroll">
-      <table className={`data-table ${compact ? "data-table--compact" : ""}`}>
-        <thead><tr><th scope="col">Tool</th><th scope="col">Access</th><th scope="col">Purpose</th>{!compact && <th scope="col">Inspect</th>}</tr></thead>
+      <table className="data-table">
+        <thead><tr><th scope="col">Tool</th><th scope="col">Access</th><th scope="col">Purpose</th><th scope="col">Inspect</th></tr></thead>
         <tbody>
           {TOOL_CATALOG.map((tool) => (
             <tr key={tool.name}>
               <th scope="row"><code className="tool-name">{tool.name}</code></th>
               <td><span className={`access-pill access-pill--${tool.access.toLowerCase()}`}>{tool.access}</span></td>
               <td><span className="tool-summary">{tool.summary}</span></td>
-              {!compact && (
-                <td>
+              <td>
                   <details className="schema-disclosure">
                     <summary>Schema &amp; example</summary>
                     <div className="schema-details">
@@ -255,7 +225,6 @@ function ToolCatalogTable({ compact = false }: { compact?: boolean }) {
                     </div>
                   </details>
                 </td>
-              )}
             </tr>
           ))}
         </tbody>
@@ -269,52 +238,65 @@ function ResultTag({ result }: { result: RunRecord["result"] }) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<AppView>("lab");
+  const [activeView, setActiveView] = useState(currentView);
   const [fault, setFault] = useState<FaultKind>(INITIAL_FAULT);
+  const [duration, setDuration] = useState<FaultDuration>("once");
+  const [target, setTarget] = useState<FaultTarget>("search_help_articles");
   const [mode, setMode] = useState<RunMode>(HANZO_ONLY_BUILD ? "hanzo" : "scripted");
-  const [model, setModel] = useState("enso-auto");
-  const [tokenLimit, setTokenLimit] = useState(HANZO_ONLY_BUILD ? 512 : 2048);
+  const [model, setModel] = useState(DEFAULT_HANZO_MODEL);
+  const [tokenLimit, setTokenLimit] = useState(HANZO_ONLY_BUILD ? PUBLIC_MAX_OUTPUT_TOKENS : 2048);
   const [status, setStatus] = useState<LocalStatus | null>(null);
-  const [history, setHistory] = useState<RunRecord[]>(() => {
-    const saved = readRunHistory();
-    return HANZO_ONLY_BUILD ? saved.filter((run) => run.mode === "hanzo") : saved;
-  });
-  const [currentRun, setCurrentRun] = useState<RunRecord | null>(() => PUBLIC_SCRIPTED_PREVIEW ? runScriptedScenario(INITIAL_FAULT) : null);
+  const [history, setHistory] = useState<RunRecord[]>(readRunHistory);
+  const [currentRun, setCurrentRun] = useState<RunRecord | null>(null);
   const [liveTrace, setLiveTrace] = useState<TraceEvent[]>([]);
   const [busy, setBusy] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(true);
+  const [inspectView, setInspectView] = useState<"trace" | "ticket">("trace");
+  const [traceFilter, setTraceFilter] = useState<TraceFilter>("all");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [historySearch, setHistorySearch] = useState("");
   const [historyFilter, setHistoryFilter] = useState<ResultFilter>("all");
   const [compareIds, setCompareIds] = useState<string[]>([]);
 
+  const previewRun = useMemo(() => runScriptedScenario(fault, duration, target), [fault, duration, target]);
+  const showingPreview = !busy && !currentRun && previewVisible;
+  const displayedRun = currentRun ?? (showingPreview ? previewRun : null);
+  const trace = busy ? liveTrace : displayedRun?.trace ?? [];
+  const traceMode = busy ? mode : displayedRun?.mode;
+  const filteredTrace = trace.filter((event) => {
+    if (traceFilter === "tools") return event.kind === "tool";
+    if (traceFilter === "faults") return event.kind === "fault" || event.kind === "retry" || event.status === "blocked" || event.status === "error" || event.status === "warning";
+    return true;
+  });
+
   const filteredHistory = useMemo(() => history.filter((run) => {
     const query = historySearch.trim().toLowerCase();
-    const matchesQuery = !query || [faultTitle(run.fault), run.model, run.result, dateTimeLabel(run.createdAt)].some((value) => value.toLowerCase().includes(query));
+    const matchesQuery = !query || [scenarioTitle(run), run.model, run.result, dateTimeLabel(run.createdAt)].some((value) => value.toLowerCase().includes(query));
     return matchesQuery && (historyFilter === "all" || run.result === historyFilter);
   }), [history, historySearch, historyFilter]);
   const compareRuns = useMemo(() => compareIds.map((id) => history.find((run) => run.id === id)).filter((run): run is RunRecord => Boolean(run)), [compareIds, history]);
-  const metrics = useMemo(() => ({
-    runs: history.length,
-    passed: history.filter((run) => run.result === "passed").length,
-    toolCalls: history.reduce((total, run) => total + run.trace.filter((event) => event.kind === "tool").length, 0),
-    retries: history.reduce((total, run) => total + run.trace.filter((event) => event.kind === "retry").length, 0),
-  }), [history]);
-
-  const shownBefore = currentRun?.before ?? createTicketFixture();
-  const shownAfter = currentRun?.after ?? shownBefore;
-  const pageName: Record<AppView, string> = { lab: "Lab", history: "Run history", tools: "MCP tools", safety: "Safety" };
-
   useEffect(() => { saveRunHistory(history); }, [history]);
 
   useEffect(() => {
-    if (!confirmOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setConfirmOpen(false); };
-    document.addEventListener("keydown", closeOnEscape);
-    document.querySelector<HTMLButtonElement>(".confirm-modal .modal-close")?.focus();
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [confirmOpen]);
+    function navigate() {
+      setActiveView(currentView());
+      if (window.location.hash === "#sample") {
+        setCurrentRun(null);
+        setInspectView("trace");
+        setTraceFilter("all");
+        setPreviewVisible(true);
+      }
+      window.scrollTo(0, 0);
+    }
+    window.addEventListener("hashchange", navigate);
+    return () => window.removeEventListener("hashchange", navigate);
+  }, []);
+
+  useEffect(() => {
+    if (activeView === "lab" && window.location.hash === "#sample") {
+      document.getElementById("trace-heading")?.focus();
+    }
+  }, [activeView]);
 
   useEffect(() => {
     if (PUBLIC_SCRIPTED_PREVIEW) return;
@@ -327,47 +309,45 @@ function App() {
       .then((value) => {
         if (cancelled) return;
         setStatus(value);
-        setModel(value.defaultModel || "enso-auto");
+        setModel(value.defaultModel || DEFAULT_HANZO_MODEL);
         if (HANZO_ONLY_BUILD && value.maxOutputTokens) setTokenLimit(value.maxOutputTokens);
         if (value.hasHanzoKey || HANZO_ONLY_BUILD) setMode("hanzo");
       })
       .catch(() => {
-        if (!cancelled) setStatus({ available: false, source: "unknown", hasHanzoKey: false, defaultModel: "enso-auto" });
+        if (!cancelled) setStatus({ available: false, source: "unknown", hasHanzoKey: false, defaultModel: DEFAULT_HANZO_MODEL });
       });
     return () => { cancelled = true; };
   }, []);
 
-  async function startRun(nextFault = fault, nextMode = mode, confirmed = false) {
-    if (busy) return;
-    if (HANZO_ONLY_BUILD && (!status?.hasHanzoKey || nextMode !== "hanzo")) {
-      setError("This hosted app requires Hanzo. Add HANZO_API_KEY to the Vercel project environment before running it.");
-      return;
-    }
-    setFault(nextFault);
+  async function startRun() {
+    if (busy || (!PUBLIC_SCRIPTED_PREVIEW && (!status?.available || (mode === "hanzo" && !status.hasHanzoKey)))) return;
     setError("");
-    setNotice("");
     setBusy(true);
-    setConfirmOpen(false);
     setCurrentRun(null);
+    setPreviewVisible(false);
+    setInspectView("trace");
+    setTraceFilter("all");
     setLiveTrace([]);
 
     try {
       let run: RunRecord;
       if (PUBLIC_SCRIPTED_PREVIEW) {
-        run = runScriptedScenario(nextFault);
+        run = runScriptedScenario(fault, duration, target);
         for (const event of run.trace) {
           await new Promise((resolve) => window.setTimeout(resolve, 110));
           setLiveTrace((previous) => [...previous, event]);
         }
       } else {
-        const runMode = HANZO_ONLY_BUILD ? "hanzo" : nextMode;
+        const runMode = HANZO_ONLY_BUILD ? "hanzo" : mode;
         const response = await fetch("/api/run", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
           body: JSON.stringify({
             mode: runMode,
-            fault: nextFault,
-            confirmed,
+            fault,
+            faultDuration: duration,
+            faultTarget: target,
+            confirmed: runMode === "hanzo",
             ...(!HANZO_ONLY_BUILD && runMode === "hanzo" ? { model, maxOutputTokens: tokenLimit } : {}),
           }),
         });
@@ -407,13 +387,6 @@ function App() {
       setCurrentRun(run);
       setLiveTrace([]);
       setHistory((previous) => [run, ...previous.filter((entry) => entry.id !== run.id)].slice(0, 16));
-      setNotice(run.mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW
-        ? `${run.model} finished. ${run.trace.filter((event) => event.kind === "agent" && event.title.startsWith("Model turn")).length} model turns used.`
-        : PUBLIC_SCRIPTED_PREVIEW
-          ? "Scripted walkthrough complete. No server or LLM was used by this page."
-          : status?.source === "vercel"
-            ? "Vercel MCP simulation complete. No LLM was used."
-            : "Scripted run complete. The local MCP server handled every tool call; no LLM was used.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The run could not be completed.");
     } finally {
@@ -421,31 +394,17 @@ function App() {
     }
   }
 
-  function requestRun() {
-    if (PUBLIC_SCRIPTED_PREVIEW || (!HANZO_ONLY_BUILD && mode === "scripted")) {
-      void startRun(fault, mode, false);
-      return;
-    }
-    setConfirmOpen(true);
-  }
-
-  function replayCurrent() {
-    if (!currentRun) return;
-    setFault(currentRun.fault);
-    if (HANZO_ONLY_BUILD || (mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW)) {
-      setMode("hanzo");
-      setConfirmOpen(true);
-    } else {
-      void startRun(currentRun.fault, mode, false);
-    }
-  }
-
-  function handleModeChange(next: string) {
-    if (next !== "scripted" && next !== "hanzo") return;
-    if (next === "hanzo" && !status?.hasHanzoKey) return;
-    setMode(next);
+  function configurationChanged() {
+    setCurrentRun(null);
+    setPreviewVisible(true);
     setError("");
-    setNotice("");
+  }
+
+  function showPreview() {
+    configurationChanged();
+    setInspectView("trace");
+    setTraceFilter("all");
+    document.getElementById("trace-heading")?.focus();
   }
 
   function handleClearHistory() {
@@ -453,178 +412,133 @@ function App() {
     setHistory([]);
     setCompareIds([]);
     setCurrentRun(null);
-    setNotice("Saved runs cleared from this browser.");
-  }
-
-  function handleReset() {
-    setCurrentRun(null);
-    setLiveTrace([]);
-    setError("");
-    setNotice("Scenario display reset. The next run starts from the original fixture.");
   }
 
   function selectHistory(run: RunRecord) {
+    if (busy) return;
     setCurrentRun(run);
     setFault(run.fault);
-    setActiveView("lab");
-    setNotice(`${run.mode === "hanzo" ? run.model : "Scripted simulation"} · ${timeLabel(run.createdAt)}`);
+    setDuration(parseFaultDuration(run.fault, run.faultDuration));
+    setTarget(parseFaultTarget(run.fault, run.faultTarget));
+    setInspectView("trace");
+    setTraceFilter("all");
+    setError("");
+    window.location.hash = "#lab";
   }
 
   function toggleCompare(id: string) {
     setCompareIds((previous) => previous.includes(id) ? previous.filter((entry) => entry !== id) : [...previous.slice(-1), id]);
   }
 
-  const publicRunUnavailable = !PUBLIC_SCRIPTED_PREVIEW && HANZO_ONLY_BUILD && status?.available === true && !status.hasHanzoKey;
-  const publicRunDisabled = !PUBLIC_SCRIPTED_PREVIEW && HANZO_ONLY_BUILD && !status?.hasHanzoKey;
   const navigation = [
-    { id: "lab" as const, label: "Lab", icon: <Activity aria-hidden="true" /> },
-    { id: "history" as const, label: "Run history", icon: <Clock3 aria-hidden="true" />, count: history.length },
-    { id: "tools" as const, label: "MCP tools", icon: <Layers aria-hidden="true" /> },
-    { id: "safety" as const, label: "Safety", icon: <ShieldCheck aria-hidden="true" /> },
-  ];
+    { id: "lab", label: "Lab" },
+    { id: "history", label: "Run history" },
+    { id: "tools", label: "MCP tools" },
+  ] as const;
+  const liveUnavailable = !PUBLIC_SCRIPTED_PREVIEW && (!status?.available || (mode === "hanzo" && !status.hasHanzoKey));
+  const runLabel = PUBLIC_SCRIPTED_PREVIEW ? "Play scripted run" : mode === "hanzo" ? "Run live" : "Run scripted MCP";
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
-      <aside className="sidebar">
-        <a className="brand" href="#main-content" aria-label="Toolstorm home" onClick={() => setActiveView("lab")}>
-          <span className="brand-mark"><ToolstormMark /></span><span>Toolstorm</span>
-        </a>
-        <div className="sidebar-caption">AGENT RELIABILITY LAB</div>
-        <nav className="side-nav" aria-label="Main navigation">
-          {navigation.map((item) => (
-            <button key={item.id} className={`side-nav-item ${activeView === item.id ? "side-nav-item--active" : ""}`} type="button" onClick={() => { setActiveView(item.id); setError(""); setNotice(""); }} aria-current={activeView === item.id ? "page" : undefined}>
-              {item.icon}<span>{item.label}</span>{item.count !== undefined && <small>{item.count}</small>}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="sidebar-data-note"><Database aria-hidden="true" /><span>Fictional ticket data<br />History stays in this browser</span></div>
-          <a className="sidebar-source" href="https://github.com/Manateek1/toolstorm" target="_blank" rel="noreferrer">View source <ArrowUpRight aria-hidden="true" /></a>
-        </div>
-      </aside>
-
-      <div className="app-main">
-        <header className="topbar">
-          <div className="breadcrumb"><span>Toolstorm</span><ChevronRight aria-hidden="true" /><strong>{pageName[activeView]}</strong></div>
-          <a className="source-link" href="https://github.com/Manateek1/toolstorm" target="_blank" rel="noreferrer"><span>Source</span><ArrowUpRight aria-hidden="true" /></a>
-        </header>
-
-        <main id="main-content" className="page-content">
-          <div className="announcements" aria-live="polite">
-            {error && <div className="banner banner--error"><CircleX aria-hidden="true" /><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X aria-hidden="true" /></button></div>}
-            {!error && notice && <div className="banner banner--notice"><CheckCircle2 aria-hidden="true" /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss message"><X aria-hidden="true" /></button></div>}
-            {publicRunUnavailable && <div className="banner banner--error"><CircleX aria-hidden="true" /><span>Real Hanzo runs are paused because this deployment has no HANZO_API_KEY. No scripted trace will be substituted.</span></div>}
-            {status && !status.available && <div className="banner banner--error"><Activity aria-hidden="true" /><span>{status.source === "local" ? <>Local API is unavailable. Start both services with <code>npm run dev</code>.</> : "The run service is unavailable. Refresh the page and try again."}</span></div>}
+      <a className="skip-link" href="#main-content" onClick={(event) => {
+        event.preventDefault();
+        document.getElementById("main-content")?.focus();
+      }}>Skip to main content</a>
+      <header className="site-header">
+        <div className="header-inner page-width">
+          <a className="brand" href="#" aria-label="Toolstorm home"><Zap fill="currentColor" aria-hidden="true" />Toolstorm</a>
+          {activeView !== "home" && (
+            <nav className="site-nav" aria-label="Main navigation">
+              {navigation.map(({ id, label }) => <a key={id} href={`#${id}`} aria-current={activeView === id ? "page" : undefined}>{label}</a>)}
+            </nav>
+          )}
+          <div className="header-actions">
+            <a className="source-link" href={SOURCE_URL} target="_blank" rel="noreferrer">View source <ArrowUpRight aria-hidden="true" /></a>
+            {activeView === "home" && <a className="button button--primary header-cta" href="#lab">Open lab <ArrowRight aria-hidden="true" /></a>}
           </div>
+        </div>
+      </header>
 
+      {activeView === "home" ? <Landing /> : (
+        <main id="main-content" className="page-width page-content" tabIndex={-1}>
           {activeView === "lab" && (
             <section className="view-stack" aria-labelledby="page-title">
-              <header className="page-heading">
-                <div><h1 id="page-title">Agent reliability lab</h1><p>Watch an agent use synthetic MCP tools, recover from a fault, and pass deterministic checks.</p></div>
-                {currentRun && <ResultTag result={currentRun.result} />}
-              </header>
+              <header className="page-heading"><div><h1 id="page-title">Scenario lab</h1><p>Test a support-ticket agent against simulated MCP failures and inspect how it responds.</p></div></header>
 
-              <section className="metric-strip" aria-label="Saved run metrics">
-                <div className="metric"><span>Saved runs</span><strong>{metrics.runs}</strong><small>On this browser</small></div>
-                <div className="metric"><span>Passed</span><strong className="metric-green">{metrics.passed}</strong><small>Of saved runs</small></div>
-                <div className="metric"><span>MCP calls</span><strong>{metrics.toolCalls}</strong><small>Across saved traces</small></div>
-                <div className="metric"><span>Retries</span><strong className="metric-amber">{metrics.retries}</strong><small>Across saved traces</small></div>
-              </section>
-
-              <section className="workflow-rail" aria-label="Task workflow">
-                <div className="workflow-step"><span className="step-number">01</span><div><strong>Read ticket</strong><small>Fetch fixture 104</small></div></div>
-                <ArrowRight className="workflow-arrow" aria-hidden="true" />
-                <div className="workflow-step"><span className="step-number">02</span><div><strong>Inspect article</strong><small>Read ha-4821</small></div></div>
-                <ArrowRight className="workflow-arrow" aria-hidden="true" />
-                <div className="workflow-step"><span className="step-number">03</span><div><strong>Add triage note</strong><small>Internal only</small></div></div>
-                <ArrowRight className="workflow-arrow" aria-hidden="true" />
-                <div className="workflow-step"><span className="step-number">04</span><div><strong>Score run</strong><small>Check final state</small></div></div>
-              </section>
-
-              <section className="workspace-grid" aria-label="Scenario workspace">
+              <div className="workspace-grid">
                 <aside className="panel scenario-panel" aria-labelledby="scenario-heading">
-                  <div className="panel-heading"><span className="panel-icon"><Braces aria-hidden="true" /></span><div><h2 id="scenario-heading">Scenario configuration</h2><p>Ticket 104 triage · fictional support system</p></div></div>
-                  <div className="task-summary"><span className="task-label">FIXED TASK</span><p>{TASK_TEXT}</p><div className="task-metadata"><span><FileText aria-hidden="true" /> Ticket #104</span><span><Database aria-hidden="true" /> Synthetic fixture</span></div></div>
-                  {!PUBLIC_SCRIPTED_PREVIEW && (HANZO_ONLY_BUILD || mode === "hanzo") && <p className="section-help">A host safeguard blocks notes until the ticket and complete article are read. A rule-based check looks for a troubleshooting action; blocked attempts appear in the trace.</p>}
+                  <div className="panel-heading"><h2 id="scenario-heading">Scenario</h2><span className="mono-label">Ticket #104</span></div>
+                  <p className="task-summary">{TASK_TEXT}</p>
 
-                  <fieldset className="control-section fault-section">
-                    <legend><Sparkles aria-hidden="true" /> Inject a fault</legend>
-                    <p className="section-help">Choose the MCP behavior the agent must recover from.</p>
-                    <div className="fault-options">
-                      {FAULTS.map((item) => (
-                        <label className={`fault-option ${fault === item.id ? "fault-option--selected" : ""}`} key={item.id}>
-                          <input type="radio" name="fault" value={item.id} checked={fault === item.id} onChange={() => setFault(item.id)} disabled={busy} />
-                          <span className="radio-indicator" aria-hidden="true"><span /></span>
-                          <span className="fault-copy"><strong>{item.title}</strong><small>{item.description}</small></span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-
-                  <section className="control-section model-section" aria-labelledby="execution-heading">
-                    <h3 id="execution-heading"><Bot aria-hidden="true" /> Model &amp; run limits</h3>
-                    {!HANZO_ONLY_BUILD && !PUBLIC_SCRIPTED_PREVIEW ? (
-                      <label className="field field--mode"><span className="sr-only">Execution mode</span><span className="select-wrap"><select value={mode} onChange={(event) => handleModeChange(event.target.value)} aria-label="Execution mode" disabled={busy}><option value="scripted">Scripted MCP · no model call</option>{status?.hasHanzoKey ? <option value="hanzo">Hanzo model · uses credits</option> : <option value="hanzo" disabled>Hanzo model · key required</option>}</select><ChevronDown aria-hidden="true" /></span></label>
-                    ) : (
-                      <div className="mode-static"><LockKeyhole aria-hidden="true" /><span>{PUBLIC_SCRIPTED_PREVIEW ? "Scripted walkthrough" : "Hanzo model · server key"}</span></div>
+                  <fieldset className="scenario-controls" disabled={busy}>
+                    <legend className="sr-only">Fault settings</legend>
+                    <label className="field"><span>Fault preset</span><select value={fault} onChange={(event) => {
+                      const next = event.target.value as FaultKind;
+                      setFault(next);
+                      setDuration(parseFaultDuration(next, duration));
+                      setTarget(parseFaultTarget(next, target));
+                      configurationChanged();
+                    }}>{FAULTS.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+                    <p className="field-help">{FAULTS.find((item) => item.id === fault)?.description}</p>
+                    {hasConfigurableDuration(fault) && (
+                      <>
+                        {fault === "temporary_error" && <label className="field"><span>Fault target</span><select value={target} onChange={(event) => { setTarget(event.target.value as FaultTarget); configurationChanged(); }}><option value="search_help_articles">Article lookup</option><option value="get_ticket">Ticket read</option></select></label>}
+                        <label className="field"><span>Fault duration</span><select value={duration} onChange={(event) => { setDuration(event.target.value as FaultDuration); configurationChanged(); }}>{Object.entries(DURATIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                      </>
                     )}
-                    {HANZO_ONLY_BUILD ? (
-                      <div className="public-run-config"><div><span>Server model</span><strong>{model}</strong></div><div><span>Output ceiling</span><strong>{tokenLimit} tokens</strong></div></div>
-                    ) : mode === "hanzo" && !PUBLIC_SCRIPTED_PREVIEW ? (
-                      <div className="model-options">
-                        <label className="field field--model"><span className="field-label">Hanzo model ID</span><input value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} placeholder="enso-auto" disabled={busy} /></label>
-                        <label className="field field--tokens"><span className="field-label">Output cap</span><select value={tokenLimit} onChange={(event) => setTokenLimit(Number(event.target.value))} aria-label="Maximum output tokens per run" disabled={busy}>{[512, 1024, 2048, 4096, 8192].map((value) => <option key={value} value={value}>{value.toLocaleString()} tokens</option>)}</select></label>
-                      </div>
-                    ) : <p className="mode-description">{PUBLIC_SCRIPTED_PREVIEW ? "This static page plays a scripted trace. No MCP server or LLM is used." : "Runs the local MCP tools without using model credits."}</p>}
-                    <div className="limit-chips"><span>5 model turns</span><span>8 tool calls</span><span>45 sec max</span></div>
-                    <button className="button button--primary run-button" type="button" onClick={requestRun} disabled={busy || publicRunDisabled}>
-                      {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
-                      <span>{busy ? "Running scenario…" : "Run scenario"}</span>
-                    </button>
-                    <p className="credit-note"><LockKeyhole aria-hidden="true" />{PUBLIC_SCRIPTED_PREVIEW ? "Scripted walkthrough · no Hanzo credits used." : mode === "hanzo" || HANZO_ONLY_BUILD ? "Hanzo calls use demo credits only after you confirm." : "No model credits are used in scripted mode."}</p>
-                  </section>
-
+                    {!HANZO_ONLY_BUILD && !PUBLIC_SCRIPTED_PREVIEW && (
+                      <label className="field"><span>Execution engine</span><select value={mode} onChange={(event) => setMode(event.target.value as RunMode)}><option value="scripted">Scripted MCP</option><option value="hanzo" disabled={!status?.hasHanzoKey}>Hanzo {status?.hasHanzoKey ? "(live)" : "(key required)"}</option></select></label>
+                    )}
+                    {!HANZO_ONLY_BUILD && !PUBLIC_SCRIPTED_PREVIEW && mode === "hanzo" && (
+                      <>
+                        <label className="field"><span>Hanzo model ID</span><input value={model} onChange={(event) => setModel(event.target.value)} maxLength={120} placeholder={DEFAULT_HANZO_MODEL} /></label>
+                        <label className="field"><span>Output cap</span><select value={tokenLimit} onChange={(event) => setTokenLimit(Number(event.target.value))}>{[512, 1024, 2048, 4096, 8192].map((value) => <option key={value} value={value}>{value.toLocaleString()} tokens</option>)}</select></label>
+                      </>
+                    )}
+                  </fieldset>
                   <div className="scenario-actions">
-                    <button className="text-button" type="button" onClick={handleReset} disabled={busy}><RotateCcw aria-hidden="true" />Reset display</button>
-                    {currentRun && <button className="text-button" type="button" onClick={replayCurrent} disabled={busy}><RotateCcw aria-hidden="true" />Replay run</button>}
+                    {HANZO_ONLY_BUILD && <div className="engine-status"><span className={status?.hasHanzoKey ? "engine-dot engine-dot--online" : "engine-dot"} /><strong>{status?.hasHanzoKey ? model : status ? "Live runner unavailable" : "Checking live runner"}</strong><span>Hanzo</span></div>}
+                    <button className="button button--primary" type="button" onClick={() => void startRun()} disabled={busy || liveUnavailable} aria-describedby={mode === "hanzo" ? "run-disclosure" : undefined}>
+                      {busy ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}{busy ? "Running…" : runLabel}
+                    </button>
+                    <button className="button button--quiet" type="button" onClick={showPreview} disabled={busy}><Terminal aria-hidden="true" />Preview result</button>
+                    {mode === "hanzo" && <p id="run-disclosure" className="field-help">Live runs send fictional data to Hanzo using Toolstorm’s credits.</p>}
                   </div>
                 </aside>
 
                 <section className="panel trace-panel" aria-labelledby="trace-heading">
-                  <div className="panel-heading panel-heading--trace"><span className="panel-icon panel-icon--terminal">&gt;_</span><div><h2 id="trace-heading">Agent trace</h2><p>{busy ? `${liveTrace.length} live chronological events` : currentRun ? `${currentRun.trace.length} chronological events` : "The run unfolds here, one model turn and tool result at a time."}</p></div>{(currentRun || busy) && <span className={`trace-mode ${(busy ? mode : currentRun?.mode) === "hanzo" ? "trace-mode--live" : ""}`}>{(busy ? mode : currentRun?.mode) === "hanzo" ? "HANZO RUN" : PUBLIC_SCRIPTED_PREVIEW ? "SCRIPTED WALKTHROUGH" : "SCRIPTED MCP"}</span>}</div>
-                  {busy ? liveTrace.length ? (
-                    <div className="trace-list" role="list" aria-label="Live chronological run trace" aria-live="polite">{liveTrace.map((event) => <TraceRow key={event.id} event={event} mode={mode} />)}</div>
-                  ) : <div className="trace-empty"><span className="trace-empty-icon"><Activity aria-hidden="true" /></span><strong>Connecting to the simulation</strong><span>Trace events will appear as the agent calls local MCP tools.</span></div> : currentRun ? (
-                    <div className="trace-list" role="list" aria-label="Chronological run trace">{currentRun.trace.map((event) => <TraceRow key={event.id} event={event} mode={currentRun.mode} />)}</div>
+                  <div className="panel-heading trace-panel-heading">
+                    <h2 id="trace-heading" tabIndex={-1}><Terminal aria-hidden="true" />Execution trace</h2>
+                    <span className={traceMode === "hanzo" ? "trace-mode trace-mode--live" : "trace-mode"} role="status">
+                      {showingPreview ? "Scripted preview" : !traceMode ? "Ready" : traceMode === "hanzo" ? busy ? "Hanzo running" : "Hanzo result" : busy ? "Script running" : PUBLIC_SCRIPTED_PREVIEW ? "Scripted playback" : "Scripted MCP"}
+                    </span>
+                  </div>
+                  <div className="trace-toolbar">
+                    <div className="segmented" aria-label="Run inspection">
+                      <button type="button" aria-pressed={inspectView === "trace"} onClick={() => setInspectView("trace")}>Events <span>{trace.length}</span></button>
+                      <button type="button" aria-pressed={inspectView === "ticket"} onClick={() => setInspectView("ticket")}>Ticket state</button>
+                    </div>
+                    {inspectView === "trace" && <label className="trace-filter"><span className="sr-only">Show events</span><select value={traceFilter} onChange={(event) => setTraceFilter(event.target.value as TraceFilter)}><option value="all">All events</option><option value="tools">Tool calls</option><option value="faults">Faults &amp; retries</option></select></label>}
+                  </div>
+                  {error && <div className="banner banner--error" role="alert"><CircleX aria-hidden="true" /><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X aria-hidden="true" /></button></div>}
+                  {inspectView === "ticket" ? (
+                    <div className="snapshot-grid">
+                      <TicketStateCard title="Before" ticket={displayedRun?.before ?? TICKET} />
+                      {displayedRun ? <TicketStateCard title="After" ticket={displayedRun.after} after /> : <p className="trace-empty">The final ticket state appears after the run.</p>}
+                    </div>
+                  ) : filteredTrace.length > 0 ? (
+                    <div className="trace-list" aria-label="Chronological trace">{filteredTrace.map((event) => <TraceRow key={event.id} event={event} mode={traceMode ?? "scripted"} />)}</div>
                   ) : (
-                    <div className="trace-empty trace-empty--workflow"><span className="trace-empty-icon"><CirclePlay aria-hidden="true" /></span><strong>Ready to run</strong><span>Start the scenario to see model turns, tool calls, injected faults, and retries.</span><div className="trace-checklist"><span><Check aria-hidden="true" /> Read ticket via MCP</span><span><Check aria-hidden="true" /> Inspect the linked article</span><span><Check aria-hidden="true" /> Add an internal triage note</span><span><Check aria-hidden="true" /> Score the final ticket state</span></div></div>
+                    <p className="trace-empty">{busy && !trace.length ? "Waiting for trace events…" : trace.length ? "No events match this filter." : "Preview the configured scenario or start a new run."}</p>
                   )}
+                  {showingPreview && <p className="trace-caption">Example of scripted behavior for these settings. Live results may differ.</p>}
+                  {currentRun && <p className="trace-caption">{scenarioTitle(currentRun)}{currentRun.mode === "hanzo" ? ` · ${currentRun.model}` : ""}</p>}
                 </section>
+              </div>
 
-                <aside className="inspector-panel" aria-label="Ticket state and deterministic outcome">
-                  <section className="panel inspector-section" aria-labelledby="ticket-state-heading">
-                    <div className="panel-heading panel-heading--compact"><span className="panel-icon"><FileText aria-hidden="true" /></span><div><h2 id="ticket-state-heading">Ticket state</h2><p>Before and after the run</p></div>{currentRun && <ResultTag result={currentRun.result} />}</div>
-                    <TicketStateCard title="Before · original fixture" ticket={shownBefore} />
-                    <TicketStateCard title="After · run state" ticket={shownAfter} after />
-                    {currentRun && <div className="run-metadata"><span>Injected fault</span><strong>{faultTitle(currentRun.fault)}</strong></div>}
-                  </section>
-                  <section className="panel outcome-section" aria-labelledby="outcome-heading">
-                    <div className="panel-heading panel-heading--compact"><span className="panel-icon"><Shield aria-hidden="true" /></span><div><h2 id="outcome-heading">Outcome checks</h2><p>Checked against the fixture state</p></div><span className="deterministic-label">RULE-BASED</span></div>
-                    {currentRun ? <><ul className="checks-list">{currentRun.checks.map((check) => <CheckRow key={check.id} check={check} />)}</ul><div className={`outcome-summary outcome-summary--${currentRun.result}`}><Shield aria-hidden="true" /><span>{outcomeText(currentRun.result)} · {faultTitle(currentRun.fault).toLowerCase()}</span></div></> : <div className="checks-empty"><span>Run the task to evaluate the note, status, untrusted input, and fault recovery.</span></div>}
-                  </section>
-                </aside>
-              </section>
-
-              <section className="bottom-grid">
-                <section className="panel tool-preview" aria-labelledby="tool-preview-heading">
-                  <div className="panel-heading panel-heading--compact"><span className="panel-icon"><Layers aria-hidden="true" /></span><div><h2 id="tool-preview-heading">MCP tool catalog <span className="heading-count">{TOOL_CATALOG.length}</span></h2><p>Only these synthetic ticket tools are available</p></div><button className="text-button text-button--accent" type="button" onClick={() => setActiveView("tools")}>Inspect tools <ChevronRight aria-hidden="true" /></button></div>
-                  <ToolCatalogTable compact />
-                </section>
-                <section className="panel recent-preview" aria-labelledby="recent-heading">
-                  <div className="panel-heading panel-heading--compact"><span className="panel-icon"><Clock3 aria-hidden="true" /></span><div><h2 id="recent-heading">Recent runs</h2><p>Saved only in this browser</p></div><button className="text-button text-button--accent" type="button" onClick={() => setActiveView("history")}>View all <ChevronRight aria-hidden="true" /></button></div>
-                  {history.slice(0, 3).length ? <div className="recent-list">{history.slice(0, 3).map((run) => <button type="button" className="recent-run" key={run.id} onClick={() => selectHistory(run)}><span className={`saved-state saved-state--${run.result}`} aria-hidden="true" /><span className="recent-copy"><strong>{faultTitle(run.fault)}</strong><small>{timeLabel(run.createdAt)} · {run.trace.filter((event) => event.kind === "tool").length} MCP calls</small></span><ResultTag result={run.result} /><ChevronRight aria-hidden="true" className="recent-chevron" /></button>)}</div> : <div className="recent-empty"><Clock3 aria-hidden="true" /><strong>No runs saved yet</strong><span>Run a fault scenario to create the first local trace.</span></div>}
-                </section>
+              <section className="panel outcome-section" aria-labelledby="outcome-heading">
+                <div className="panel-heading"><h2 id="outcome-heading"><ShieldCheck aria-hidden="true" />Outcome checks</h2>{displayedRun && <ResultTag result={displayedRun.result} />}</div>
+                {displayedRun ? <ul className="checks-list">{displayedRun.checks.map((check) => <CheckRow key={check.id} check={check} />)}</ul> : <p className="checks-empty">Checks are evaluated when the run finishes.</p>}
               </section>
             </section>
           )}
@@ -638,11 +552,11 @@ function App() {
                 <span className="history-count">{filteredHistory.length} shown · {history.length} saved</span>
               </div>
               <section className="panel history-panel" aria-label="Saved run records">
-                {filteredHistory.length ? <div className="table-scroll"><table className="data-table history-table"><thead><tr><th scope="col">Compare</th><th scope="col">Fault</th><th scope="col">Mode</th><th scope="col">Date</th><th scope="col">Trace events</th><th scope="col">Result</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredHistory.map((run) => <tr key={run.id}><td><input type="checkbox" aria-label={`Compare ${faultTitle(run.fault)} run from ${dateTimeLabel(run.createdAt)}`} checked={compareIds.includes(run.id)} onChange={() => toggleCompare(run.id)} disabled={!compareIds.includes(run.id) && compareIds.length >= 2} /></td><th scope="row"><button type="button" className="table-link" onClick={() => selectHistory(run)}>{faultTitle(run.fault)}</button><small className="table-subtext">{run.id.slice(0, 8)}</small></th><td>{run.mode === "hanzo" ? <span className="mode-tag"><Bot aria-hidden="true" />{run.model}</span> : <span className="mode-tag">Scripted MCP</span>}</td><td>{dateTimeLabel(run.createdAt)}</td><td>{run.trace.length}</td><td><ResultTag result={run.result} /></td><td className="table-actions"><button className="icon-button" type="button" onClick={() => exportRun(run)} aria-label={`Export ${faultTitle(run.fault)} run JSON`} title="Export JSON"><ArrowDownToLine aria-hidden="true" /></button><button className="text-button text-button--accent" type="button" onClick={() => selectHistory(run)}>Open</button></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon"><Clock3 aria-hidden="true" /></span><h2>{history.length ? "No runs match those filters" : "No runs saved yet"}</h2><p>{history.length ? "Adjust your search or result filter." : "Complete a scenario to build a local, inspectable run history."}</p>{history.length > 0 && <button className="text-button text-button--accent" type="button" onClick={() => { setHistorySearch(""); setHistoryFilter("all"); }}>Clear filters</button>}</div>}
+                {filteredHistory.length ? <div className="table-scroll"><table className="data-table history-table"><thead><tr><th scope="col">Compare</th><th scope="col">Fault</th><th scope="col">Mode</th><th scope="col">Date</th><th scope="col">Trace events</th><th scope="col">Result</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{filteredHistory.map((run) => <tr key={run.id}><td><input type="checkbox" aria-label={`Compare ${scenarioTitle(run)} run from ${dateTimeLabel(run.createdAt)}`} checked={compareIds.includes(run.id)} onChange={() => toggleCompare(run.id)} disabled={!compareIds.includes(run.id) && compareIds.length >= 2} /></td><th scope="row"><button type="button" className="table-link" onClick={() => selectHistory(run)} disabled={busy}>{scenarioTitle(run)}</button><small className="table-subtext">{run.id.slice(0, 8)}</small></th><td>{run.mode === "hanzo" ? <span className="mode-tag"><Bot aria-hidden="true" />{run.model}</span> : <span className="mode-tag">{PUBLIC_SCRIPTED_PREVIEW ? "Scripted playback" : "Scripted MCP"}</span>}</td><td>{dateTimeLabel(run.createdAt)}</td><td>{run.trace.length}</td><td><ResultTag result={run.result} /></td><td className="table-actions"><button className="icon-button" type="button" onClick={() => exportRun(run)} aria-label={`Export ${scenarioTitle(run)} run JSON`} title="Export JSON"><ArrowDownToLine aria-hidden="true" /></button><button className="text-button text-button--accent" type="button" onClick={() => selectHistory(run)} disabled={busy}>Open</button></td></tr>)}</tbody></table></div> : <div className="empty-state"><span className="empty-icon"><Clock3 aria-hidden="true" /></span><h2>{history.length ? "No runs match those filters" : "No runs saved yet"}</h2><p>{history.length ? "Adjust your search or result filter." : "Complete a scenario to build a local, inspectable run history."}</p>{history.length > 0 && <button className="text-button text-button--accent" type="button" onClick={() => { setHistorySearch(""); setHistoryFilter("all"); }}>Clear filters</button>}</div>}
               </section>
               <section className="panel compare-panel" aria-labelledby="compare-heading">
                 <div className="panel-heading panel-heading--compact"><span className="panel-icon"><Activity aria-hidden="true" /></span><div><h2 id="compare-heading">Compare runs</h2><p>Select up to two saved runs in the table to compare checks and tool activity.</p></div><span className="compare-count">{compareRuns.length}/2 selected</span></div>
-                {compareRuns.length === 2 ? <div className="compare-grid">{compareRuns.map((run) => <article className="compare-card" key={run.id}><div className="compare-title"><div><strong>{faultTitle(run.fault)}</strong><small>{dateTimeLabel(run.createdAt)} · {run.mode === "hanzo" ? run.model : "Scripted MCP"}</small></div><ResultTag result={run.result} /></div><div className="compare-stats"><span><strong>{run.trace.filter((event) => event.kind === "tool").length}</strong>MCP calls</span><span><strong>{run.trace.filter((event) => event.kind === "retry").length}</strong>Retries</span><span><strong>{run.trace.length}</strong>Events</span></div><ul className="compare-checks">{run.checks.map((check) => <li key={check.id}><span className={`check-dot check-dot--${check.state}`} />{check.label}</li>)}</ul><button className="text-button text-button--accent" type="button" onClick={() => selectHistory(run)}>Open full trace <ArrowRight aria-hidden="true" /></button></article>)}</div> : <div className="compare-empty">Choose two saved runs above. Their deterministic checks, retries, and MCP call counts will appear here.</div>}
+                {compareRuns.length === 2 ? <div className="compare-grid">{compareRuns.map((run) => <article className="compare-card" key={run.id}><div className="compare-title"><div><strong>{scenarioTitle(run)}</strong><small>{dateTimeLabel(run.createdAt)} · {run.mode === "hanzo" ? run.model : PUBLIC_SCRIPTED_PREVIEW ? "Scripted playback" : "Scripted MCP"}</small></div><ResultTag result={run.result} /></div><div className="compare-stats"><span><strong>{run.trace.filter((event) => event.kind === "tool").length}</strong>MCP calls</span><span><strong>{run.trace.filter((event) => event.kind === "retry").length}</strong>Retries</span><span><strong>{run.trace.length}</strong>Events</span></div><ul className="compare-checks">{run.checks.map((check) => <li key={check.id}><span className={`check-dot check-dot--${check.state}`} />{check.label}</li>)}</ul><button className="text-button text-button--accent" type="button" onClick={() => selectHistory(run)} disabled={busy}>Open full trace <ArrowRight aria-hidden="true" /></button></article>)}</div> : <div className="compare-empty">Choose two saved runs above. Their deterministic checks, retries, and MCP call counts will appear here.</div>}
               </section>
             </section>
           )}
@@ -657,33 +571,25 @@ function App() {
 
           {activeView === "safety" && (
             <section className="view-stack" aria-labelledby="page-title">
-              <header className="page-heading"><div><h1 id="page-title">Safety &amp; data</h1><p>See what the demo can change, what leaves this browser, and where the limits apply.</p></div><span className="plain-count">Experimental demo · not a security certification</span></header>
-              <section className="data-flow" aria-label="Data flow for a confirmed run"><div className="flow-node"><span className="flow-node-icon"><Activity aria-hidden="true" /></span><strong>Your browser</strong><p>Scenario controls and saved run history</p><small>History remains in local storage</small></div><ArrowRight aria-hidden="true" className="flow-arrow" /><div className="flow-node"><span className="flow-node-icon"><Database aria-hidden="true" /></span><strong>Toolstorm server</strong><p>Fresh synthetic MCP ticket fixture</p><small>Four allowlisted ticket tools</small></div><ArrowRight aria-hidden="true" className="flow-arrow" /><div className="flow-node flow-node--hanzo"><span className="flow-node-icon"><Bot aria-hidden="true" /></span><strong>Hanzo</strong><p>Fixed task prompt and simulated tool results</p><small>Only after the visitor confirms</small></div></section>
-              <section className="safety-grid">
-                <article className="panel safety-card"><div className="panel-heading"><span className="panel-icon"><ShieldCheck aria-hidden="true" /></span><div><h2>Run boundaries</h2><p>Limits enforced by the hosted runner</p></div></div><ul className="boundary-list"><li><CheckCircle2 aria-hidden="true" /><span><strong>5 model turns</strong><small>Stops after five chat-completion requests.</small></span></li><li><CheckCircle2 aria-hidden="true" /><span><strong>8 MCP calls</strong><small>Only the four synthetic ticket tools are available.</small></span></li><li><CheckCircle2 aria-hidden="true" /><span><strong>512 output tokens</strong><small>Fixed server-side ceiling on the public Vercel app.</small></span></li><li><CheckCircle2 aria-hidden="true" /><span><strong>45 second deadline</strong><small>Run requests are cancelled when the deadline or browser connection ends.</small></span></li></ul></article>
-                <article className="panel safety-card"><div className="panel-heading"><span className="panel-icon"><LockKeyhole aria-hidden="true" /></span><div><h2>Privacy &amp; credit use</h2><p>Per-run disclosure and storage</p></div></div><ul className="boundary-list"><li><CheckCircle2 aria-hidden="true" /><span><strong>Key stays server-side</strong><small>The browser receives only whether a key is configured.</small></span></li><li><CheckCircle2 aria-hidden="true" /><span><strong>Confirmation before Hanzo</strong><small>Each model run discloses that it may use the demo owner's credits.</small></span></li><li><CheckCircle2 aria-hidden="true" /><span><strong>Local history</strong><small>Saved traces stay in this browser and can be cleared or exported.</small></span></li><li><CheckCircle2 aria-hidden="true" /><span><strong>No background inference</strong><small>Loading the page never calls a model.</small></span></li></ul></article>
+              <header className="page-heading"><div><h1 id="page-title">Run details</h1><p>How Toolstorm handles data and evaluates each run.</p></div></header>
+              <section className="panel details-panel" aria-label="Data and run boundaries">
+                <dl>
+                  <div><dt>Fictional data</dt><dd>Each run starts with a fresh synthetic support ticket and a linked help article. The four MCP tools only work with that fixture.</dd></div>
+                  <div><dt>Hanzo requests</dt><dd>Live runs send the fixed task and simulated tool results to Hanzo. Toolstorm uses its server-side key. Scripted previews run in the browser.</dd></div>
+                  <div><dt>Run budget</dt><dd>Hosted runs allow up to {MAX_MODEL_TURNS} model turns, {MAX_TOOL_CALLS} tool calls, {PUBLIC_MAX_OUTPUT_TOKENS.toLocaleString()} output tokens, and 45 seconds.</dd></div>
+                  <div><dt>Run history</dt><dd>Completed runs are stored in this browser. You can compare runs, export their traces, or clear the saved history.</dd></div>
+                  <div><dt>Outcome checks</dt><dd>The score reflects the simulated ticket, article, and trace. The checks cover this scenario’s note, status, and fault recovery.</dd></div>
+                </dl>
               </section>
-              <section className="panel abuse-note"><div className="panel-icon panel-icon--warning"><AlertTriangle aria-hidden="true" /></div><div><h2>Public-run rate limits have a scope</h2><p>Bot screening and short-term throttles reduce casual abuse. The counters are stored per warm Vercel function, so they are not a shared account-wide credit cap. For a hard ceiling, use a dedicated Hanzo key with a provider-side spend budget and request rate.</p><a href="https://docs.hanzo.ai/docs/api-keys/" target="_blank" rel="noreferrer">Hanzo key limits <ArrowUpRight aria-hidden="true" /></a></div></section>
-              <section className="panel safety-status"><div className="panel-heading panel-heading--compact"><span className="panel-icon"><Activity aria-hidden="true" /></span><div><h2>Current execution mode</h2><p>Reported by the server, without exposing secrets</p></div></div><div className="status-grid"><div><span>Environment</span><strong>{PUBLIC_SCRIPTED_PREVIEW ? "Static scripted walkthrough" : status?.source === "vercel" ? "Vercel hosted" : status?.source === "local" ? "Local development" : "Checking runner"}</strong></div><div><span>Hanzo key</span><strong>{PUBLIC_SCRIPTED_PREVIEW ? "Not used by this page" : status?.hasHanzoKey ? "Configured on server" : status?.available ? "Not configured" : "Unavailable"}</strong></div><div><span>History</span><strong>Browser only · {history.length} saved</strong></div><div><span>Model cap</span><strong>{HANZO_ONLY_BUILD ? "512 output tokens" : `${tokenLimit.toLocaleString()} output tokens`}</strong></div></div></section>
             </section>
           )}
         </main>
-
-        <footer className="app-footer"><span>Toolstorm · public technical demo</span><span>Synthetic ticket data · saved run history stays in this browser</span></footer>
-      </div>
-
-      {confirmOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmOpen(false); }}>
-          <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-description">
-            <button className="modal-close" type="button" aria-label="Close confirmation" onClick={() => setConfirmOpen(false)}><X aria-hidden="true" /></button>
-            <span className="modal-icon"><LockKeyhole aria-hidden="true" /></span>
-            <h2 id="confirm-title">Confirm a Hanzo model run</h2>
-            <p id="confirm-description">Toolstorm will send the fixed task prompt and simulated ticket/help-article results to Hanzo using this demo's server key. This may use the demo owner's Hanzo credits.</p>
-            <div className="confirmation-facts"><span><CheckCircle2 aria-hidden="true" />Only the fixed fictional ticket scenario is sent</span><span><CheckCircle2 aria-hidden="true" />Model: {model} · up to {tokenLimit.toLocaleString()} output tokens, 5 model turns, and 8 tool calls</span><span><CheckCircle2 aria-hidden="true" />Your API key stays in the server environment</span><span><CheckCircle2 aria-hidden="true" />No request is made until you confirm below</span></div>
-            <div className="modal-actions"><button className="button button--quiet" type="button" onClick={() => setConfirmOpen(false)}>Cancel</button><button className="button button--primary" type="button" onClick={() => void startRun(fault, "hanzo", true)}><LockKeyhole aria-hidden="true" /><span>Confirm &amp; run</span></button></div>
-          </section>
-        </div>
       )}
+
+      <footer className="app-footer page-width">
+        <span><Zap fill="currentColor" aria-hidden="true" />Toolstorm</span>
+        <div><a href="#safety">Run details</a><a href={SOURCE_URL} target="_blank" rel="noreferrer">GitHub <ArrowUpRight aria-hidden="true" /></a></div>
+      </footer>
     </div>
   );
 }

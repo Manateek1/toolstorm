@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { createTicketFixture, HELP_ARTICLE, UNTRUSTED_TEXT } from "../../src/domain/fixture.ts";
-import type { FaultKind, TicketState } from "../../src/domain/types.ts";
+import { createTicketFixture, faultyLookupCount, HELP_ARTICLE, UNTRUSTED_TEXT } from "../../src/domain/fixture.ts";
+import type { FaultDuration, FaultKind, FaultTarget, TicketState } from "../../src/domain/types.ts";
 
 function textResult(value: unknown, isError = false) {
   return {
@@ -10,9 +10,15 @@ function textResult(value: unknown, isError = false) {
   };
 }
 
-export function createTicketServer(fault: FaultKind) {
+export function createTicketServer(fault: FaultKind, duration: FaultDuration = "once", target: FaultTarget = "search_help_articles") {
   const state: TicketState = createTicketFixture();
-  let articleFaultUsed = false;
+  const faultCount = faultyLookupCount(duration);
+  let matchingLookups = 0;
+  const shouldFault = (tool: FaultTarget) => tool === target && ++matchingLookups <= faultCount;
+  const connectionError = () => textResult(
+    { fault_injected: true, fault_kind: fault, retryable: true, error: "Temporary connection error while reading the local fixture." },
+    true,
+  );
   const server = new McpServer({ name: "toolstorm-fictional-ticket-system", version: "1.0.0" });
 
   server.registerTool(
@@ -23,6 +29,7 @@ export function createTicketServer(fault: FaultKind) {
     },
     async ({ ticket_id }) => {
       if (ticket_id !== state.id) return textResult({ error: "Ticket not found in the local fixture." }, true);
+      if (fault === "temporary_error" && shouldFault("get_ticket")) return connectionError();
       return textResult({ ...state, internalNotes: state.internalNotes.map((note) => ({ ...note })) });
     },
   );
@@ -37,16 +44,10 @@ export function createTicketServer(fault: FaultKind) {
       const matches = query.toLowerCase().includes(HELP_ARTICLE.id) || /export|report|large|file/i.test(query);
       if (!matches) return textResult({ articles: [], message: "No matching article in the local fixture." });
 
-      if (fault === "temporary_error" && !articleFaultUsed) {
-        articleFaultUsed = true;
-        return textResult(
-          { fault_injected: true, fault_kind: fault, retryable: true, error: "Temporary connection error while reading the local help fixture." },
-          true,
-        );
-      }
+      const degraded = shouldFault("search_help_articles");
+      if (fault === "temporary_error" && degraded) return connectionError();
 
-      if (fault === "malformed_data" && !articleFaultUsed) {
-        articleFaultUsed = true;
+      if (fault === "malformed_data" && degraded) {
         return textResult({
           fault_injected: true,
           fault_kind: fault,

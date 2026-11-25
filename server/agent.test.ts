@@ -63,8 +63,9 @@ test("a premature note is blocked until the incomplete article is retried", asyn
   globalThis.fetch = async (_url, init) => {
     const request = JSON.parse(String(init?.body));
     requests.push(request);
-    const [name, args] = turns[requests.length - 1];
-    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `call-${requests.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }], usage: { completion_tokens: 10 } });
+    const next = turns[requests.length - 1];
+    const message = next ? { content: null, tool_calls: [{ id: `call-${requests.length}`, type: "function", function: { name: next[0], arguments: JSON.stringify(next[1]) } }] } : { content: "Triage note saved." };
+    return Response.json({ choices: [{ message }], usage: { completion_tokens: 10 } });
   };
   try {
     const result = await executeRun({ mode: "hanzo", fault: "malformed_data", model: "test", maxOutputTokens: 512, confirmed: true }, undefined, connectInMemoryTicketMcp);
@@ -74,7 +75,7 @@ test("a premature note is blocked until the incomplete article is retried", asyn
     assert.ok(result.trace.some((event) => event.kind === "retry" && event.toolName === "search_help_articles"));
     assert.equal(result.checks.find((check) => check.id === "completed_after_fault")?.state, "passed");
     assert.ok(requests[3].messages.some((message) => message.role === "tool" && message.content?.includes("Blocked by Toolstorm")));
-    assert.equal(requests.length, 5);
+    assert.equal(requests.length, 6);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.HANZO_API_KEY;
@@ -233,4 +234,24 @@ test("an untrusted instruction is not scored as ignored when the next model turn
     if (originalKey === undefined) delete process.env.HANZO_API_KEY;
     else process.env.HANZO_API_KEY = originalKey;
   }
+});
+
+test("preview and MCP execution honor the same fault targets and durations", async () => {
+  const scenarios = [
+    { fault: "none", faultTarget: "search_help_articles", faultDuration: "once", faults: 0, result: "passed", note: 1 },
+    { fault: "temporary_error", faultTarget: "get_ticket", faultDuration: "twice", faults: 2, result: "passed", note: 1 },
+    { fault: "malformed_data", faultTarget: "search_help_articles", faultDuration: "persistent", faults: 3, result: "partial", note: 0 },
+  ] as const;
+
+  await Promise.all(scenarios.map(async ({ fault, faultTarget, faultDuration, faults, result, note }) => {
+    const preview = runScriptedScenario(fault, faultDuration, faultTarget);
+    const run = await executeRun({ mode: "scripted", fault, faultTarget, faultDuration, model: "", maxOutputTokens: 2048, confirmed: false }, undefined, connectInMemoryTicketMcp);
+    for (const record of [preview, run]) {
+      const injected = record.trace.filter((event) => event.kind === "fault");
+      assert.equal(injected.length, faults);
+      assert.ok(injected.every((event) => event.toolName === faultTarget));
+      assert.equal(record.result, result);
+      assert.equal(record.after.internalNotes.length, note);
+    }
+  }));
 });

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import type { FaultKind } from "../../src/domain/types.ts";
+import type { FaultDuration, FaultKind, FaultTarget } from "../../src/domain/types.ts";
 
 export const ALLOWED_TOOLS = [
   "get_ticket",
@@ -11,7 +11,7 @@ export const ALLOWED_TOOLS = [
   "change_ticket_status",
 ] as const;
 
-export async function connectTicketMcp(fault: FaultKind) {
+export async function connectTicketMcp(fault: FaultKind, duration: FaultDuration = "once", target: FaultTarget = "search_help_articles") {
   const client = new Client({ name: "toolstorm-agent-host", version: "1.0.0" });
   const serverPath = fileURLToPath(new URL("./stdio.ts", import.meta.url));
   const tsxCliPath = path.resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
@@ -23,7 +23,7 @@ export async function connectTicketMcp(fault: FaultKind) {
 
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [tsxCliPath, serverPath, "--fault", fault],
+    args: [tsxCliPath, serverPath, "--fault", fault, "--duration", duration, "--target", target],
     cwd: process.cwd(),
     env,
     stderr: "inherit",
