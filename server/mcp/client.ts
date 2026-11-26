@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { type ErrorProfile } from "../../src/domain/errorProfiles.ts";
 import type { FaultDuration, FaultKind, FaultTarget } from "../../src/domain/types.ts";
 
 export const ALLOWED_TOOLS = [
@@ -11,7 +12,7 @@ export const ALLOWED_TOOLS = [
   "change_ticket_status",
 ] as const;
 
-export async function connectTicketMcp(fault: FaultKind, duration: FaultDuration = "once", target: FaultTarget = "search_help_articles") {
+export async function connectTicketMcp(fault: FaultKind, duration: FaultDuration = "once", target: FaultTarget = "search_help_articles", errorProfile?: ErrorProfile) {
   const client = new Client({ name: "toolstorm-agent-host", version: "1.0.0" });
   const serverPath = fileURLToPath(new URL("./stdio.ts", import.meta.url));
   const tsxCliPath = path.resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
@@ -23,7 +24,7 @@ export async function connectTicketMcp(fault: FaultKind, duration: FaultDuration
 
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [tsxCliPath, serverPath, "--fault", fault, "--duration", duration, "--target", target],
+    args: [tsxCliPath, serverPath, "--fault", fault, "--duration", duration, "--target", target, ...(errorProfile ? ["--error-profile", errorProfile] : [])],
     cwd: process.cwd(),
     env,
     stderr: "inherit",

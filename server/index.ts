@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { configuredHanzoModel } from "./run-config.ts";
 import { executeRun } from "./agent.ts";
+import { parseErrorProfile } from "../src/domain/errorProfiles.ts";
 import { parseFault, parseFaultDuration, parseFaultTarget } from "../src/domain/fixture.ts";
 import type { RunMode, RunRequest } from "../src/domain/types.ts";
 
@@ -50,6 +51,7 @@ app.post("/api/run", async (req, res) => {
     fault,
     faultDuration: parseFaultDuration(fault, value?.faultDuration),
     faultTarget: parseFaultTarget(fault, value?.faultTarget),
+    errorProfile: fault === "temporary_error" ? parseErrorProfile(value?.errorProfile) : undefined,
     model: typeof value?.model === "string" ? value.model.slice(0, 120) : configuredHanzoModel(),
     maxOutputTokens: typeof value?.maxOutputTokens === "number" ? value.maxOutputTokens : 2048,
     confirmed: value?.confirmed === true,

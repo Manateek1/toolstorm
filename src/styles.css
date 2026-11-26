@@ -454,3 +454,44 @@ pre { margin: 6px 0 8px; padding: 9px; overflow-wrap: anywhere; white-space: pre
   .scenario-controls { gap: 8px; }
   .field select, .field input { min-height: 37px; }
 }
+
+.failure-dialog {
+  width: min(640px, calc(100% - 28px));
+  max-height: calc(100dvh - 30px);
+  padding: 0;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.failure-dialog::backdrop { background: rgb(2 6 8 / 80%); }
+.failure-dialog .panel-heading { position: sticky; top: 0; z-index: 1; background: var(--panel); }
+.failure-dialog .icon-button { min-width: 34px; min-height: 34px; justify-content: center; }
+.failure-dialog-body { display: grid; gap: 14px; padding: 16px; }
+.failure-intro { color: var(--muted); font-size: 14px; }
+.failure-dialog textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 9px 11px;
+  background: var(--field);
+  color: var(--text);
+  font: 12px/1.5 var(--mono);
+}
+.failure-dialog input[type="file"] { font-size: 13px; }
+.failure-dialog input::file-selector-button {
+  margin-right: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: 12px/1.4 var(--mono);
+  cursor: pointer;
+}
+.failure-inspect { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.failure-match { display: grid; gap: 7px; align-items: start; padding-top: 13px; border-top: 1px solid var(--line); }
+.failure-match strong { color: var(--cyan); font: 700 19px/1.2 var(--heading); }
+.failure-match pre { max-height: 135px; overflow: auto; margin: 0; }
+.failure-match .button { justify-self: start; margin-top: 5px; }
+.failure-error { color: var(--red); font-size: 13px; }
+.failure-metadata { color: var(--muted); font: 12px/1.45 var(--mono); overflow-wrap: anywhere; }

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { executeRun } from "./agent.ts";
 import { connectInMemoryTicketMcp } from "./mcp/memory-client.ts";
 import { isUsefulNote, scoreRun } from "../src/domain/scoring.ts";
+import { parseMcpFailureImport } from "../src/lib/importMcpFailure.ts";
 import { runScriptedScenario } from "../src/domain/scriptedRun.ts";
 
 test("note check requires an action instead of only a file-size keyword", () => {
@@ -254,4 +255,36 @@ test("preview and MCP execution honor the same fault targets and durations", asy
       assert.equal(record.after.internalNotes.length, note);
     }
   }));
+});
+
+test("imports failed tool results and protocol errors from an MCP log", () => {
+  const log = [
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_ticket" } },
+    { jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: "Upstream timed out" }] } },
+    { jsonrpc: "2.0", id: 2, error: { code: -32602, message: "Invalid params" } },
+  ].map((record) => JSON.stringify(record)).join("\n");
+  const failures = parseMcpFailureImport(log);
+  assert.deepEqual(failures.map(({ profile, tool, source }) => ({ profile, tool, source })), [
+    { profile: "timeout", tool: "get_ticket", source: "MCP tool result" },
+    { profile: "invalid_arguments", tool: undefined, source: "JSON-RPC error" },
+  ]);
+  assert.equal(parseMcpFailureImport("[mcp] 429 Too many requests")[0].profile, "rate_limit");
+  assert.throws(() => parseMcpFailureImport('{"result":{"isError":false}}'), /No failure found/);
+  assert.throws(() => parseMcpFailureImport('{"result":'), /incomplete JSON/);
+});
+
+test("replays an imported error category using synthetic text in both runners", async () => {
+  const [imported] = parseMcpFailureImport('{"error":{"code":403,"message":"Denied for private reference XYZZY"}}');
+  const settings = {
+    fault: "temporary_error", faultTarget: "get_ticket", faultDuration: "persistent", errorProfile: imported.profile,
+  } as const;
+  const preview = runScriptedScenario(settings.fault, settings.faultDuration, settings.faultTarget, settings.errorProfile);
+  const run = await executeRun({ ...settings, mode: "scripted", model: "", maxOutputTokens: 2048, confirmed: false }, undefined, connectInMemoryTicketMcp);
+  for (const record of [preview, run]) {
+    assert.equal(record.errorProfile, "permission_denied");
+    assert.equal(record.trace.filter((event) => event.kind === "fault").length, 1);
+    assert.equal(record.after.internalNotes.length, 0);
+    assert.match(JSON.stringify(record), /simulated service denied access/);
+    assert.doesNotMatch(JSON.stringify(record), /XYZZY/);
+  }
 });

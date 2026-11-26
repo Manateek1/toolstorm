@@ -36,6 +36,12 @@ The lab includes four presets:
 
 You can apply a connection or malformed-data fault on the first attempt, the first two attempts, or every attempt. **Preview result** shows a labeled scripted example with the current settings. The preview runs entirely in the browser, updates immediately, and stays out of saved run history.
 
+### Import an MCP failure
+
+In the lab, choose **Import MCP failure** and paste an MCP tool error, a JSON-RPC error, or a text log excerpt. You can also upload a JSON, JSONL, or text log of up to 128 KB. If a log contains several failures, pick one and select **Use in lab**. JSONL logs can include the original `tools/call` request alongside its response.
+
+The result shows the error type Toolstorm detected and previews how the synthetic ticket tools would respond. You can change which read fails and how long the fault lasts before replaying it. Imported messages, arguments, URLs, and other raw log data stay in the browser. A server run receives the selected error category and fixture settings and generates its own synthetic result.
+
 ### Vercel-hosted MCP and Hanzo runs
 
 The Vercel app serves the same dashboard and `/api` endpoints. Each run creates a fresh synthetic ticket server and MCP client from the official TypeScript SDK, connects them with the SDK's in-memory transport, and streams the real tool calls and results into the trace. Ticket data and injected faults stay inside this fictional simulation.

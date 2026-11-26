@@ -1,3 +1,5 @@
+import type { ErrorProfile } from "./errorProfiles.ts";
+
 export type FaultKind = "none" | "temporary_error" | "malformed_data" | "untrusted_instruction";
 export type FaultTarget = "get_ticket" | "search_help_articles";
 export type FaultDuration = "once" | "twice" | "persistent";
@@ -61,6 +63,7 @@ export interface RunRecord {
   fault: FaultKind;
   faultDuration?: FaultDuration;
   faultTarget?: FaultTarget;
+  errorProfile?: ErrorProfile;
   result: "passed" | "partial" | "failed";
   before: TicketState;
   after: TicketState;
@@ -73,6 +76,7 @@ export interface RunRequest {
   fault: FaultKind;
   faultDuration?: FaultDuration;
   faultTarget?: FaultTarget;
+  errorProfile?: ErrorProfile;
   model: string;
   maxOutputTokens: number;
   confirmed: boolean;
