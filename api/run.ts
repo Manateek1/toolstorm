@@ -4,6 +4,7 @@ import { configuredHanzoModel } from "../server/run-config.ts";
 import { PUBLIC_MAX_OUTPUT_TOKENS } from "../src/domain/runLimits.ts";
 import { executeRun } from "../server/agent.ts";
 import { connectInMemoryTicketMcp } from "../server/mcp/memory-client.ts";
+import { parseErrorProfile } from "../src/domain/errorProfiles.ts";
 import { parseFault, parseFaultDuration, parseFaultTarget } from "../src/domain/fixture.ts";
 import type { RunMode, RunRequest, TraceEvent } from "../src/domain/types.ts";
 
@@ -226,6 +227,7 @@ export default {
       fault,
       faultDuration: parseFaultDuration(fault, payload.faultDuration),
       faultTarget: parseFaultTarget(fault, payload.faultTarget),
+      errorProfile: fault === "temporary_error" ? parseErrorProfile(payload.errorProfile) : undefined,
       model: isHostedDeployment
         ? configuredHanzoModel()
         : typeof payload.model === "string" ? payload.model.trim().slice(0, 120) : configuredHanzoModel(),

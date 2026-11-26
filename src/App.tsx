@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownToLine, ArrowRight, ArrowUpRight, Bot,
   CheckCircle2, ChevronDown, CircleHelp, CirclePlay, CircleX, Clock3,
-  Database, Layers, Play, RotateCcw, Search, Shield, ShieldCheck, Terminal,
+  Database, FileUp, Layers, Play, RotateCcw, Search, Shield, ShieldCheck, Terminal,
   Trash2, Wrench, X, Zap,
 } from "lucide-react";
+import { ImportFailure } from "./ImportFailure";
 import { Landing } from "./Landing";
+import { ERROR_PROFILES, parseErrorProfile, type ErrorProfile } from "./domain/errorProfiles";
+import type { ImportedFailure } from "./lib/importMcpFailure";
 import { createTicketFixture, FAULTS, hasConfigurableDuration, parseFaultDuration, parseFaultTarget, TASK_TEXT } from "./domain/fixture";
 import { DEFAULT_HANZO_MODEL, MAX_MODEL_TURNS, MAX_TOOL_CALLS, PUBLIC_MAX_OUTPUT_TOKENS } from "./domain/runLimits";
 import { runScriptedScenario } from "./domain/scriptedRun";
@@ -111,7 +114,9 @@ function faultTitle(fault: FaultKind) {
 function scenarioTitle(run: RunRecord) {
   if (!hasConfigurableDuration(run.fault)) return faultTitle(run.fault);
   const target = run.faultTarget === "get_ticket" ? "Ticket" : "Article";
-  return `${faultTitle(run.fault)} · ${target.toLowerCase()} · ${DURATIONS[parseFaultDuration(run.fault, run.faultDuration)].toLowerCase()}`;
+  const profile = parseErrorProfile(run.errorProfile);
+  const label = profile ? ERROR_PROFILES[profile].label : faultTitle(run.fault);
+  return `${label} · ${target.toLowerCase()} · ${DURATIONS[parseFaultDuration(run.fault, run.faultDuration)].toLowerCase()}`;
 }
 
 function FaultIcon({ state }: { state: OutcomeCheck["state"] }) {
@@ -240,6 +245,8 @@ function ResultTag({ result }: { result: RunRecord["result"] }) {
 function App() {
   const [activeView, setActiveView] = useState(currentView);
   const [fault, setFault] = useState<FaultKind>(INITIAL_FAULT);
+  const [errorProfile, setErrorProfile] = useState<ErrorProfile>();
+  const [importOpen, setImportOpen] = useState(false);
   const [duration, setDuration] = useState<FaultDuration>("once");
   const [target, setTarget] = useState<FaultTarget>("search_help_articles");
   const [mode, setMode] = useState<RunMode>(HANZO_ONLY_BUILD ? "hanzo" : "scripted");
@@ -258,7 +265,7 @@ function App() {
   const [historyFilter, setHistoryFilter] = useState<ResultFilter>("all");
   const [compareIds, setCompareIds] = useState<string[]>([]);
 
-  const previewRun = useMemo(() => runScriptedScenario(fault, duration, target), [fault, duration, target]);
+  const previewRun = useMemo(() => runScriptedScenario(fault, duration, target, errorProfile), [fault, duration, target, errorProfile]);
   const showingPreview = !busy && !currentRun && previewVisible;
   const displayedRun = currentRun ?? (showingPreview ? previewRun : null);
   const trace = busy ? liveTrace : displayedRun?.trace ?? [];
@@ -332,7 +339,7 @@ function App() {
     try {
       let run: RunRecord;
       if (PUBLIC_SCRIPTED_PREVIEW) {
-        run = runScriptedScenario(fault, duration, target);
+        run = runScriptedScenario(fault, duration, target, errorProfile);
         for (const event of run.trace) {
           await new Promise((resolve) => window.setTimeout(resolve, 110));
           setLiveTrace((previous) => [...previous, event]);
@@ -347,6 +354,7 @@ function App() {
             fault,
             faultDuration: duration,
             faultTarget: target,
+            errorProfile,
             confirmed: runMode === "hanzo",
             ...(!HANZO_ONLY_BUILD && runMode === "hanzo" ? { model, maxOutputTokens: tokenLimit } : {}),
           }),
@@ -400,6 +408,16 @@ function App() {
     setError("");
   }
 
+  function applyImportedFailure(failure: ImportedFailure) {
+    setFault("temporary_error");
+    setErrorProfile(failure.profile);
+    setTarget(failure.tool === "get_ticket" ? "get_ticket" : "search_help_articles");
+    setDuration(ERROR_PROFILES[failure.profile].retryable ? "once" : "persistent");
+    setInspectView("trace");
+    setTraceFilter("all");
+    configurationChanged();
+  }
+
   function showPreview() {
     configurationChanged();
     setInspectView("trace");
@@ -418,6 +436,7 @@ function App() {
     if (busy) return;
     setCurrentRun(run);
     setFault(run.fault);
+    setErrorProfile(run.fault === "temporary_error" ? parseErrorProfile(run.errorProfile) : undefined);
     setDuration(parseFaultDuration(run.fault, run.faultDuration));
     setTarget(parseFaultTarget(run.fault, run.faultTarget));
     setInspectView("trace");
@@ -463,7 +482,11 @@ function App() {
         <main id="main-content" className="page-width page-content" tabIndex={-1}>
           {activeView === "lab" && (
             <section className="view-stack" aria-labelledby="page-title">
-              <header className="page-heading"><div><h1 id="page-title">Scenario lab</h1><p>Test a support-ticket agent against simulated MCP failures and inspect how it responds.</p></div></header>
+              <header className="page-heading">
+                <div><h1 id="page-title">Scenario lab</h1><p>Test a support-ticket agent against simulated MCP failures and inspect how it responds.</p></div>
+                <button className="button button--quiet" type="button" onClick={() => setImportOpen(true)} disabled={busy}><FileUp aria-hidden="true" />Import MCP failure</button>
+              </header>
+              {importOpen && <ImportFailure onClose={() => setImportOpen(false)} onApply={applyImportedFailure} />}
 
               <div className="workspace-grid">
                 <aside className="panel scenario-panel" aria-labelledby="scenario-heading">
@@ -472,14 +495,19 @@ function App() {
 
                   <fieldset className="scenario-controls" disabled={busy}>
                     <legend className="sr-only">Fault settings</legend>
-                    <label className="field"><span>Fault preset</span><select value={fault} onChange={(event) => {
+                    <label className="field"><span>Fault preset</span><select value={errorProfile ? "imported" : fault} onChange={(event) => {
                       const next = event.target.value as FaultKind;
+                      if (event.target.value === "imported") return;
                       setFault(next);
+                      setErrorProfile(undefined);
                       setDuration(parseFaultDuration(next, duration));
                       setTarget(parseFaultTarget(next, target));
                       configurationChanged();
-                    }}>{FAULTS.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
-                    <p className="field-help">{FAULTS.find((item) => item.id === fault)?.description}</p>
+                    }}>
+                      {FAULTS.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                      {errorProfile && <option value="imported">{ERROR_PROFILES[errorProfile].label} (imported)</option>}
+                    </select></label>
+                    <p className="field-help">{errorProfile ? ERROR_PROFILES[errorProfile].message : FAULTS.find((item) => item.id === fault)?.description}</p>
                     {hasConfigurableDuration(fault) && (
                       <>
                         {fault === "temporary_error" && <label className="field"><span>Fault target</span><select value={target} onChange={(event) => { setTarget(event.target.value as FaultTarget); configurationChanged(); }}><option value="search_help_articles">Article lookup</option><option value="get_ticket">Ticket read</option></select></label>}

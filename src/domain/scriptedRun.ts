@@ -1,3 +1,4 @@
+import { ERROR_PROFILES, type ErrorProfile } from "./errorProfiles.ts";
 import { createTicketFixture, faultyLookupCount, HELP_ARTICLE, parseFaultDuration, parseFaultTarget, UNTRUSTED_TEXT } from "./fixture.ts";
 import { scoreRun } from "./scoring.ts";
 import type { FaultDuration, FaultKind, FaultTarget, RunRecord, TraceEvent } from "./types";
@@ -5,7 +6,7 @@ import type { FaultDuration, FaultKind, FaultTarget, RunRecord, TraceEvent } fro
 const TRIAGE_NOTE =
   "Report exports time out above the 25 MB limit. Narrow the date range or use a scheduled export for larger files (help article ha-4821).";
 
-export function runScriptedScenario(fault: FaultKind, duration?: FaultDuration, target?: FaultTarget): RunRecord {
+export function runScriptedScenario(fault: FaultKind, duration?: FaultDuration, target?: FaultTarget, errorProfile?: ErrorProfile): RunRecord {
   const faultDuration = parseFaultDuration(fault, duration);
   const faultTarget = parseFaultTarget(fault, target);
   const before = createTicketFixture();
@@ -30,8 +31,11 @@ export function runScriptedScenario(fault: FaultKind, duration?: FaultDuration, 
       if (attempt > 1) add("retry", "warning", "Retry the read", "The scripted agent retries the same read-only tool.", { toolName });
       const degraded = toolName === faultTarget && attempt <= faultCount;
       if (degraded && fault === "temporary_error") {
-        add("fault", "error", "Connection error", "The simulated tool returns a retryable error.", { toolName });
-        add("tool", "error", toolName, "Connection interrupted.", { toolName, input, output: { error: "Temporary connection error", retryable: true } });
+        const profile = errorProfile ? ERROR_PROFILES[errorProfile] : undefined;
+        const message = profile?.message ?? "Temporary connection error";
+        add("fault", "error", profile?.label ?? "Connection error", "The synthetic tool returns a simulated error.", { toolName });
+        add("tool", "error", toolName, message, { toolName, input, output: { error: message, retryable: profile?.retryable ?? true } });
+        if (profile?.retryable === false) break;
         continue;
       }
       if (degraded && fault === "malformed_data") {
@@ -45,7 +49,7 @@ export function runScriptedScenario(fault: FaultKind, duration?: FaultDuration, 
       add("tool", "success", toolName, success, { toolName, input, output: result });
       return true;
     }
-    add("agent", "warning", "Required read unavailable", "The scripted agent stops after three attempts without adding a note.");
+    add("agent", "warning", "Required read unavailable", "The scripted agent could not complete the read and stopped without adding a note.");
     return false;
   }
 
@@ -75,6 +79,7 @@ export function runScriptedScenario(fault: FaultKind, duration?: FaultDuration, 
     fault,
     faultDuration,
     faultTarget,
+    errorProfile,
     result: checks.some((check) => check.state === "failed") ? "partial" : "passed",
     before,
     after,
