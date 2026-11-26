@@ -102,15 +102,14 @@ export function parseMcpFailureImport(input: string): ImportedFailure[] {
     : [decoded];
 
   const toolsById = new Map<string | number, string>();
-  for (const row of rows) {
-    const request = asObject(row);
-    if (request?.method !== "tools/call") continue;
-    const tool = asText(asObject(request.params)?.name, 100);
-    if (tool && (typeof request.id === "string" || typeof request.id === "number")) toolsById.set(request.id, tool);
-  }
-
   const failures: ImportedFailure[] = [];
   for (const row of rows) {
+    const request = asObject(row);
+    if (request?.method === "tools/call") {
+      const tool = asText(asObject(request.params)?.name, 100);
+      if (tool && (typeof request.id === "string" || typeof request.id === "number")) toolsById.set(request.id, tool);
+      continue;
+    }
     const entry = readFailure(row, toolsById);
     if (entry) failures.push(entry);
     if (failures.length === MAX_FAILURES) break;

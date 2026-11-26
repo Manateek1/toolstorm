@@ -261,12 +261,13 @@ test("imports failed tool results and protocol errors from an MCP log", () => {
   const log = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_ticket" } },
     { jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: "Upstream timed out" }] } },
-    { jsonrpc: "2.0", id: 2, error: { code: -32602, message: "Invalid params" } },
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lookup" } },
+    { jsonrpc: "2.0", id: 1, error: { code: -32602, message: "Invalid params" } },
   ].map((record) => JSON.stringify(record)).join("\n");
   const failures = parseMcpFailureImport(log);
   assert.deepEqual(failures.map(({ profile, tool, source }) => ({ profile, tool, source })), [
     { profile: "timeout", tool: "get_ticket", source: "MCP tool result" },
-    { profile: "invalid_arguments", tool: undefined, source: "JSON-RPC error" },
+    { profile: "invalid_arguments", tool: "lookup", source: "JSON-RPC error" },
   ]);
   assert.equal(parseMcpFailureImport("[mcp] 429 Too many requests")[0].profile, "rate_limit");
   assert.throws(() => parseMcpFailureImport('{"result":{"isError":false}}'), /No failure found/);
